@@ -75,7 +75,7 @@ class FaceEngine:
         return attributes
     
     def _assess_face_quality(self, img_bgr, bbox, landmarks):
-        """Bewertet die Qualität des Gesichts"""
+        """Bewertet die Qualität des Gesichts mit erweiterten Metriken"""
         try:
             x1, y1, x2, y2 = bbox
             face_roi = img_bgr[y1:y2, x1:x2]
@@ -88,25 +88,99 @@ class FaceEngine:
             img_area = img_bgr.shape[0] * img_bgr.shape[1]
             size_score = min(face_area / img_area * 100, 1.0)
             
-            # Schärfe (Laplacian Variance)
+            # Schärfe (Laplacian Variance) - verbessert
             gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
             laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
-            sharpness_score = min(laplacian_var / 500, 1.0)  # Normalisiert
+            sharpness_score = min(laplacian_var / 800, 1.0)  # Angepasst für bessere Erkennung
             
-            # Helligkeit
+            # Helligkeit - verbessert
             brightness = np.mean(gray)
-            brightness_score = 1.0 - abs(brightness - 128) / 128
+            brightness_score = 1.0 - abs(brightness - 120) / 120  # Optimiert für Gesichter
             
-            # Kontrast
+            # Kontrast - verbessert
             contrast = np.std(gray)
-            contrast_score = min(contrast / 50, 1.0)
+            contrast_score = min(contrast / 60, 1.0)  # Angepasst
             
-            # Gesamtqualität
-            quality = (size_score * 0.3 + sharpness_score * 0.3 + 
-                      brightness_score * 0.2 + contrast_score * 0.2)
+            # Neue Qualitätsmetriken
+            # Symmetrie basierend auf Landmarks
+            symmetry_score = self._assess_symmetry(landmarks) if landmarks is not None else 0.5
+            
+            # Pose-Qualität (Frontalität)
+            pose_score = self._assess_pose_quality(landmarks) if landmarks is not None else 0.5
+            
+            # Rauschen
+            noise_score = self._assess_noise_level(gray)
+            
+            # Gesamtqualität mit erweiterten Gewichtungen
+            quality = (size_score * 0.25 + sharpness_score * 0.25 + 
+                      brightness_score * 0.15 + contrast_score * 0.15 +
+                      symmetry_score * 0.1 + pose_score * 0.05 + noise_score * 0.05)
             
             return float(max(0.0, min(1.0, quality)))
             
+        except Exception:
+            return 0.5
+    
+    def _assess_symmetry(self, landmarks):
+        """Bewertet Gesichtssymmetrie basierend auf Landmarks"""
+        try:
+            if landmarks is None or len(landmarks) < 5:
+                return 0.5
+            
+            # Vereinfachte Symmetrie-Bewertung
+            # Linke und rechte Augenpunkte
+            left_eye = landmarks[0] if len(landmarks) > 0 else None
+            right_eye = landmarks[1] if len(landmarks) > 1 else None
+            
+            if left_eye is not None and right_eye is not None:
+                # Berechne Symmetrie basierend auf Augenposition
+                eye_distance = abs(left_eye[0] - right_eye[0])
+                eye_height_diff = abs(left_eye[1] - right_eye[1])
+                
+                # Symmetrie-Score (je kleiner die Differenz, desto symmetrischer)
+                symmetry = 1.0 - min(eye_height_diff / 50.0, 1.0)
+                return max(0.0, symmetry)
+            
+            return 0.5
+        except Exception:
+            return 0.5
+    
+    def _assess_pose_quality(self, landmarks):
+        """Bewertet Pose-Qualität (Frontalität)"""
+        try:
+            if landmarks is None or len(landmarks) < 5:
+                return 0.5
+            
+            # Vereinfachte Pose-Bewertung
+            # Prüfe ob Gesicht frontal ist
+            nose = landmarks[2] if len(landmarks) > 2 else None
+            left_eye = landmarks[0] if len(landmarks) > 0 else None
+            right_eye = landmarks[1] if len(landmarks) > 1 else None
+            
+            if nose is not None and left_eye is not None and right_eye is not None:
+                # Berechne ob Nase zwischen den Augen liegt
+                eye_center_x = (left_eye[0] + right_eye[0]) / 2
+                nose_offset = abs(nose[0] - eye_center_x)
+                
+                # Pose-Score (je näher die Nase am Augenmittelpunkt, desto frontaler)
+                pose_quality = 1.0 - min(nose_offset / 30.0, 1.0)
+                return max(0.0, pose_quality)
+            
+            return 0.5
+        except Exception:
+            return 0.5
+    
+    def _assess_noise_level(self, gray_face):
+        """Bewertet Rauschlevel im Gesicht"""
+        try:
+            # Berechne Rauschlevel mit Sobel-Operator
+            sobel_x = cv2.Sobel(gray_face, cv2.CV_64F, 1, 0, ksize=3)
+            sobel_y = cv2.Sobel(gray_face, cv2.CV_64F, 0, 1, ksize=3)
+            noise_level = np.mean(np.sqrt(sobel_x**2 + sobel_y**2))
+            
+            # Normalisiere Rauschlevel (je niedriger, desto besser)
+            noise_score = max(0.0, 1.0 - noise_level / 100.0)
+            return noise_score
         except Exception:
             return 0.5
     
@@ -142,7 +216,7 @@ class FaceEngine:
             return None
     
     def _detect_eye_status(self, img_bgr, bbox):
-        """Erkennt Augen-Status (offen/geschlossen)"""
+        """Verbesserte Augen-Status-Erkennung (offen/geschlossen)"""
         try:
             x1, y1, x2, y2 = bbox
             face_roi = img_bgr[y1:y2, x1:x2]
@@ -151,21 +225,73 @@ class FaceEngine:
                 return None
             
             gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
-            eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
-            eyes = eye_cascade.detectMultiScale(gray, 1.1, 3)
             
-            if len(eyes) >= 2:
-                return "open"
-            elif len(eyes) == 1:
+            # Mehrere Erkennungsmethoden kombinieren
+            eye_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml')
+            eye_glasses_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye_tree_eyeglasses.xml')
+            
+            # Standard-Augen-Erkennung
+            eyes = eye_cascade.detectMultiScale(gray, 1.1, 3)
+            eyes_glasses = eye_glasses_cascade.detectMultiScale(gray, 1.1, 3)
+            
+            # Kombiniere Ergebnisse
+            total_eyes = len(eyes) + len(eyes_glasses)
+            
+            # Erweiterte Analyse basierend auf Augenregion
+            eye_region_analysis = self._analyze_eye_region(gray)
+            
+            # Entscheidung basierend auf mehreren Faktoren
+            if total_eyes >= 2:
+                if eye_region_analysis == "bright":
+                    return "open"
+                elif eye_region_analysis == "dark":
+                    return "closed"
+                else:
+                    return "open"  # Standard bei erkannten Augen
+            elif total_eyes == 1:
                 return "partially_open"
             else:
-                return "closed"
+                # Keine Augen erkannt - analysiere Augenregion
+                if eye_region_analysis == "dark":
+                    return "closed"
+                elif eye_region_analysis == "bright":
+                    return "open"
+                else:
+                    return "unknown"
                 
         except Exception:
             return None
     
+    def _analyze_eye_region(self, gray_face):
+        """Analysiert Augenregion für Helligkeit und Kontrast"""
+        try:
+            height, width = gray_face.shape
+            
+            # Augenregion (obere 40% des Gesichts)
+            eye_region = gray_face[:int(height*0.4), :]
+            
+            if eye_region.size == 0:
+                return "unknown"
+            
+            # Berechne Durchschnittshelligkeit
+            avg_brightness = np.mean(eye_region)
+            
+            # Berechne Kontrast
+            contrast = np.std(eye_region)
+            
+            # Klassifiziere basierend auf Helligkeit und Kontrast
+            if avg_brightness > 120 and contrast > 30:
+                return "bright"  # Offene Augen (hell und kontrastreich)
+            elif avg_brightness < 80 and contrast < 20:
+                return "dark"    # Geschlossene Augen (dunkel und wenig Kontrast)
+            else:
+                return "mixed"   # Unbestimmt
+                
+        except Exception:
+            return "unknown"
+    
     def _detect_mouth_status(self, img_bgr, bbox):
-        """Erkennt Mund-Status (offen/geschlossen)"""
+        """Verbesserte Mund-Status-Erkennung (offen/geschlossen)"""
         try:
             x1, y1, x2, y2 = bbox
             face_roi = img_bgr[y1:y2, x1:x2]
@@ -174,16 +300,67 @@ class FaceEngine:
                 return None
             
             gray = cv2.cvtColor(face_roi, cv2.COLOR_BGR2GRAY)
+            
+            # Mehrere Erkennungsmethoden
             mouth_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml')
             mouths = mouth_cascade.detectMultiScale(gray, 1.1, 3)
             
+            # Mundregion-Analyse
+            mouth_region_analysis = self._analyze_mouth_region(gray)
+            
+            # Kombiniere Ergebnisse
             if len(mouths) > 0:
-                return "open"
+                # Mund erkannt - prüfe ob wirklich offen
+                if mouth_region_analysis == "open":
+                    return "open"
+                elif mouth_region_analysis == "closed":
+                    return "closed"
+                else:
+                    return "open"  # Standard bei erkanntem Mund
             else:
-                return "closed"
+                # Kein Mund erkannt - basiere auf Region-Analyse
+                if mouth_region_analysis == "open":
+                    return "open"
+                elif mouth_region_analysis == "closed":
+                    return "closed"
+                else:
+                    return "unknown"
                 
         except Exception:
             return None
+    
+    def _analyze_mouth_region(self, gray_face):
+        """Analysiert Mundregion für Öffnungsstatus"""
+        try:
+            height, width = gray_face.shape
+            
+            # Mundregion (untere 30% des Gesichts)
+            mouth_region = gray_face[int(height*0.7):, :]
+            
+            if mouth_region.size == 0:
+                return "unknown"
+            
+            # Berechne horizontale Gradienten (wichtig für Mundöffnung)
+            sobel_x = cv2.Sobel(mouth_region, cv2.CV_64F, 1, 0, ksize=3)
+            horizontal_gradients = np.mean(np.abs(sobel_x))
+            
+            # Berechne vertikale Gradienten
+            sobel_y = cv2.Sobel(mouth_region, cv2.CV_64F, 0, 1, ksize=3)
+            vertical_gradients = np.mean(np.abs(sobel_y))
+            
+            # Berechne Textur-Varianz
+            texture_variance = np.var(mouth_region)
+            
+            # Klassifiziere basierend auf Gradienten und Textur
+            if horizontal_gradients > 25 and texture_variance > 150:
+                return "open"    # Starke horizontale Gradienten und hohe Varianz = offener Mund
+            elif horizontal_gradients < 15 and texture_variance < 100:
+                return "closed"  # Schwache Gradienten und niedrige Varianz = geschlossener Mund
+            else:
+                return "mixed"   # Unbestimmt
+                
+        except Exception:
+            return "unknown"
 
 class GalleryDB:
     def __init__(self):

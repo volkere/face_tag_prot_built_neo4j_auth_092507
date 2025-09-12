@@ -1,0 +1,14 @@
+credentials:
+  usernames:
+    admin:
+      email: admin@zeitkalkuel.com
+      name: Administrator
+      password: $2b$12$Y66xBX5U3HwQcdpCDmVtDuhRR1GsYa8E1UTYxZG.03qO9VgZn6iCa
+    user:
+      email: user@zeitkalkuel.com
+      name: Benutzer
+      password: $2b$12$HqCw.LN4ZYodT72Rb6JK3ef.0/6O1Xu9.j.zHlTr.OUd.bOkbuUum
+cookie:
+  expiry_days: 1
+  key: zeitkalkuel_auth_key
+  name: zeitkalkuel_cookie

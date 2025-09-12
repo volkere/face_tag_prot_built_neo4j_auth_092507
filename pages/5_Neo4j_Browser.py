@@ -39,7 +39,7 @@ with st.sidebar:
     # Beispiel-Abfragen
     sample_queries = st.session_state.neo4j_manager.get_sample_queries()
     
-    st.subheader("📋 Beispiel-Abfragen")
+    st.subheader("Beispiel-Abfragen")
     selected_sample = st.selectbox(
         "Wählen Sie eine Beispiel-Abfrage:",
         [""] + [q['name'] for q in sample_queries],
@@ -85,7 +85,7 @@ with col1:
     )
     
     # Abfrage-Parameter
-    st.subheader("📝 Abfrage-Parameter")
+    st.subheader("Abfrage-Parameter")
     param_input = st.text_area(
         "Parameter (JSON):",
         value="{}",
@@ -96,10 +96,10 @@ with col1:
     # Abfrage ausführen
     col_exec1, col_exec2, col_exec3 = st.columns([1, 1, 2])
     with col_exec1:
-        execute_query = st.button("🚀 Abfrage ausführen", type="primary")
+        execute_query = st.button("Abfrage ausführen", type="primary")
     
     with col_exec2:
-        debug_mode = st.checkbox("🐛 Debug-Modus", help="Zeigt Rohdaten der Abfrage an")
+        debug_mode = st.checkbox("Debug-Modus", help="Zeigt Rohdaten der Abfrage an")
     
     with col_exec3:
         if st.button("Graph zurücksetzen"):
@@ -148,7 +148,7 @@ if execute_query:
             
             # Debug-Modus: Zeige Rohdaten
             if debug_mode:
-                st.subheader("🐛 Debug-Informationen")
+                st.subheader("Debug-Informationen")
                 
                 # Zeige auch die Rohdaten der Abfrage
                 try:
@@ -205,7 +205,7 @@ if execute_query:
             else:
                 st.warning("Keine Knoten gefunden. Überprüfen Sie Ihre Abfrage.")
                 if debug_mode:
-                    st.info("💡 Tipp: Aktivieren Sie den Debug-Modus, um die Rohdaten zu sehen und das Problem zu identifizieren.")
+                    st.info("Tipp: Aktivieren Sie den Debug-Modus, um die Rohdaten zu sehen und das Problem zu identifizieren.")
                 
     except Exception as e:
         st.error(f"Fehler bei der Abfrage: {e}")
@@ -331,16 +331,16 @@ if "graph_data" in st.session_state:
         col_legend1, col_legend2, col_legend3, col_legend4 = st.columns(4)
         
         with col_legend1:
-            st.markdown("🔴 **Image** - Bilder")
+            st.markdown("**Image** - Bilder")
         with col_legend2:
-            st.markdown("🔵 **Person** - Personen")
+            st.markdown("**Person** - Personen")
         with col_legend3:
-            st.markdown("🟢 **Face** - Gesichter")
+            st.markdown("**Face** - Gesichter")
         with col_legend4:
-            st.markdown("🟡 **Location** - Standorte")
+            st.markdown("**Location** - Standorte")
         
         # Detaillierte Knoten-Informationen
-        with st.expander("📋 Knoten-Details", expanded=False):
+        with st.expander("Knoten-Details", expanded=False):
             if graph_data.get('nodes'):
                 # Erstelle DataFrame für Knoten
                 nodes_df = pd.DataFrame([
@@ -372,7 +372,7 @@ if "graph_data" in st.session_state:
         st.info("Keine Knoten zum Anzeigen verfügbar.")
 
 # Abfrage-Historie
-with st.expander("📚 Abfrage-Historie", expanded=False):
+with st.expander("Abfrage-Historie", expanded=False):
     if "query_history" not in st.session_state:
         st.session_state.query_history = []
     

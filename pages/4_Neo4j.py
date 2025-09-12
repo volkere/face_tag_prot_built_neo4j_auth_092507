@@ -59,7 +59,7 @@ if not st.session_state.neo4j_manager.connected:
     st.info("Bitte verbinden Sie sich zuerst mit der Neo4j-Datenbank in der Sidebar.")
     
     # Anleitung
-    with st.expander("📋 Neo4j Setup-Anleitung", expanded=True):
+    with st.expander("Neo4j Setup-Anleitung", expanded=True):
         st.markdown("""
         **So richten Sie Neo4j ein:**
         
@@ -108,11 +108,11 @@ with tab1:
             st.success(f"JSON-Datei geladen: {len(json_data)} Bilder")
             
             # Zeige Vorschau
-            with st.expander("📋 Datenvorschau", expanded=False):
+            with st.expander("Datenvorschau", expanded=False):
                 st.json(json_data[0] if json_data else {})
             
             # Import-Button
-            if st.button("🚀 In Neo4j importieren", type="primary"):
+            if st.button("In Neo4j importieren", type="primary"):
                 with st.spinner("Importiere Daten in Neo4j..."):
                     try:
                         stats = st.session_state.neo4j_manager.import_json_data(json_data)
@@ -218,7 +218,7 @@ with tab3:
     )
     
     if query_type == "Gesichter nach Person":
-        st.subheader("👤 Gesichter nach Person suchen")
+        st.subheader("Gesichter nach Person suchen")
         
         # Person auswählen
         person_name = st.text_input("Personenname", placeholder="z.B. Max Mustermann")
@@ -304,7 +304,7 @@ with tab3:
                     st.error(f"Fehler bei der Suche: {e}")
     
     elif query_type == "Gesichter nach Standort":
-        st.subheader("📍 Gesichter nach Standort suchen")
+        st.subheader("Gesichter nach Standort suchen")
         
         col1, col2 = st.columns(2)
         with col1:

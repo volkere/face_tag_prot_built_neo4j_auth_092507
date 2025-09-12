@@ -253,7 +253,7 @@ class EnhancedFaceEngine:
         # Metadaten-Bias berechnen
         self._calculate_metadata_bias(training_data)
         
-        print("🎉 Training abgeschlossen!")
+        print("Training abgeschlossen!")
         return results
     
     def _calculate_metadata_bias(self, training_data: List[Dict]):
@@ -441,7 +441,7 @@ class MetadataAwareTrainer:
                     else:
                         training_data.append(data)
             except Exception as e:
-                print(f"⚠️ Fehler beim Laden von {json_file}: {e}")
+                print(f"WARNUNG: Fehler beim Laden von {json_file}: {e}")
         
         print(f"{len(training_data)} Trainingsbeispiele geladen")
         return training_data
@@ -483,7 +483,7 @@ class MetadataAwareTrainer:
             'improvement': self._calculate_improvement(train_results, val_results)
         }
         
-        print("🎉 Training abgeschlossen!")
+        print("Training abgeschlossen!")
         self._print_training_summary(summary)
         
         return summary
@@ -542,7 +542,7 @@ def create_training_dataset_from_annotations(annotation_files: List[str]) -> Lis
                 else:
                     training_data.append(data)
         except Exception as e:
-            print(f"⚠️ Fehler beim Laden von {file_path}: {e}")
+            print(f"WARNUNG: Fehler beim Laden von {file_path}: {e}")
     
     return training_data
 

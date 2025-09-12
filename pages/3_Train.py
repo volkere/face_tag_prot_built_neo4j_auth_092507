@@ -11,8 +11,257 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from typing import List, Dict, Any
+import io
+import cv2
+import numpy as np
+from PIL import Image
 
-from app.enhanced_face_engine import MetadataAwareTrainer, EnhancedFaceEngine, create_training_dataset_from_annotations
+# Versuche enhanced_face_engine zu importieren
+try:
+    from app.enhanced_face_engine import MetadataAwareTrainer, EnhancedFaceEngine, create_training_dataset_from_annotations
+    ENHANCED_ENGINE_AVAILABLE = True
+except ImportError:
+    ENHANCED_ENGINE_AVAILABLE = False
+    st.warning("Enhanced Face Engine nicht verfügbar.")
+
+# Import für Metadaten-Extraktion und Face Engine
+try:
+    from app.location import extract_comprehensive_metadata
+    from app.face_recognizer import FaceEngine
+    LOCATION_ENGINE_AVAILABLE = True
+except ImportError:
+    LOCATION_ENGINE_AVAILABLE = False
+    st.warning("Location Engine nicht verfügbar.")
+
+def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """
+    Analysiert Trainingsdaten und extrahiert Statistiken
+    
+    Args:
+        training_data: Liste von Trainingsdaten-Einträgen
+        
+    Returns:
+        Dictionary mit Statistiken
+    """
+    stats = {
+        'camera_models': {},
+        'lenses': {},
+        'iso_values': [],
+        'aperture_values': [],
+        'shutter_speeds': [],
+        'focal_lengths': [],
+        'emotions': {},
+        'genders': {},
+        'age_groups': {},
+        'quality_scores': [],
+        'locations': {}
+    }
+    
+    for item in training_data:
+        # Metadaten analysieren
+        metadata = item.get('metadata', {})
+        
+        # Kamera-Modell
+        if 'camera_model' in metadata:
+            model = metadata['camera_model']
+            stats['camera_models'][model] = stats['camera_models'].get(model, 0) + 1
+        
+        # Objektiv
+        if 'lens_model' in metadata:
+            lens = metadata['lens_model']
+            stats['lenses'][lens] = stats['lenses'].get(lens, 0) + 1
+        
+        # ISO
+        if 'iso' in metadata:
+            stats['iso_values'].append(metadata['iso'])
+        
+        # Blende
+        if 'aperture' in metadata:
+            stats['aperture_values'].append(metadata['aperture'])
+        
+        # Verschlusszeit
+        if 'shutter_speed' in metadata:
+            stats['shutter_speeds'].append(metadata['shutter_speed'])
+        
+        # Brennweite
+        if 'focal_length' in metadata:
+            stats['focal_lengths'].append(metadata['focal_length'])
+        
+        # Standort
+        if 'location' in metadata:
+            location = metadata['location']
+            if 'city' in location:
+                city = location['city']
+                stats['locations'][city] = stats['locations'].get(city, 0) + 1
+        
+        # Gesichts-Analyse
+        persons = item.get('persons', [])
+        for person in persons:
+            # Emotion
+            if 'emotion' in person:
+                emotion = person['emotion']
+                stats['emotions'][emotion] = stats['emotions'].get(emotion, 0) + 1
+            
+            # Geschlecht
+            if 'gender' in person:
+                gender = person['gender']
+                stats['genders'][gender] = stats['genders'].get(gender, 0) + 1
+            
+            # Alter (in Gruppen)
+            if 'age' in person:
+                age = person['age']
+                if age < 18:
+                    group = '0-17'
+                elif age < 30:
+                    group = '18-29'
+                elif age < 50:
+                    group = '30-49'
+                elif age < 70:
+                    group = '50-69'
+                else:
+                    group = '70+'
+                stats['age_groups'][group] = stats['age_groups'].get(group, 0) + 1
+            
+            # Qualität
+            if 'quality_score' in person:
+                stats['quality_scores'].append(person['quality_score'])
+    
+    return stats
+
+def validate_training_data_format(data):
+    """
+    Validiert das Format der Trainingsdaten
+    
+    Args:
+        data: Trainingsdaten-Dictionary oder Liste
+        
+    Returns:
+        bool: True wenn Format gültig ist
+    """
+    if isinstance(data, list):
+        for item in data:
+            if not validate_training_data_format(item):
+                return False
+        return True
+    
+    if not isinstance(data, dict):
+        return False
+    
+    # Erforderliche Felder prüfen
+    required_fields = ['image', 'metadata', 'persons']
+    for field in required_fields:
+        if field not in data:
+            return False
+    
+    # Personen-Liste prüfen
+    if not isinstance(data['persons'], list):
+        return False
+    
+    # Mindestens eine Person sollte vorhanden sein
+    if len(data['persons']) == 0:
+        return False
+    
+    return True
+
+def generate_training_data_from_photos(photos, engine):
+    """
+    Generiert Trainingsdaten aus hochgeladenen Musterfotos
+    
+    Args:
+        photos: Liste von hochgeladenen Foto-Dateien
+        engine: FaceEngine für Gesichtserkennung
+        
+    Returns:
+        Liste von Trainingsdaten-Dictionaries
+    """
+    training_data = []
+    
+    for photo in photos:
+        try:
+            # Bild laden
+            data = photo.read()
+            image = Image.open(io.BytesIO(data)).convert("RGB")
+            img_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+            
+            # Gesichtserkennung
+            faces = engine.analyze(img_bgr)
+            
+            # Metadaten extrahieren
+            metadata = extract_comprehensive_metadata(image)
+            
+            # Trainingsdaten-Eintrag erstellen
+            training_entry = {
+                "image": photo.name,
+                "metadata": metadata,
+                "persons": []
+            }
+            
+            # Gesichter zu Trainingsdaten hinzufügen
+            for face in faces:
+                person_data = {
+                    "age": face.get('age', 25),  # Standard-Alter falls nicht erkannt
+                    "gender": face.get('gender', 'unknown'),
+                    "quality_score": face.get('quality_score', 0.5),
+                    "bbox": face.get('bbox', [0, 0, 100, 100]),
+                    "emotion": face.get('emotion', 'neutral'),
+                    "pose": face.get('pose', {})
+                }
+                training_entry["persons"].append(person_data)
+            
+            training_data.append(training_entry)
+            
+        except Exception as e:
+            st.error(f"Fehler beim Verarbeiten von {photo.name}: {e}")
+    
+    return training_data
+
+def display_training_results(results: Dict[str, Any]):
+    """Zeigt Trainings-Ergebnisse an"""
+    st.subheader("Trainings-Ergebnisse")
+    
+    # Metriken
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if 'training' in results and 'age_accuracy' in results['training']:
+            st.metric("Alter-Genauigkeit", f"{results['training']['age_accuracy']:.3f}")
+    
+    with col2:
+        if 'training' in results and 'gender_accuracy' in results['training']:
+            st.metric("Geschlecht-Genauigkeit", f"{results['training']['gender_accuracy']:.3f}")
+    
+    with col3:
+        if 'training' in results and 'quality_accuracy' in results['training']:
+            st.metric("Qualität-Genauigkeit", f"{results['training']['quality_accuracy']:.3f}")
+    
+    # Detaillierte Ergebnisse
+    with st.expander("Detaillierte Ergebnisse", expanded=False):
+        if 'training' in results:
+            st.write("**Training-Metriken:**")
+            for metric, value in results['training'].items():
+                st.write(f"- {metric}: {value:.3f}")
+        
+        if 'validation' in results:
+            st.write("**Validierungs-Metriken:**")
+            for metric, value in results['validation'].items():
+                st.write(f"- {metric}: {value:.3f}")
+        
+        if 'improvement' in results:
+            st.write("**Verbesserungen:**")
+            for metric, improvement in results['improvement'].items():
+                st.write(f"- {metric}: {improvement:+.3f}")
+    
+    # Modell-Integration
+    st.subheader("Modell-Integration")
+    st.info("""
+    **So integrieren Sie das trainierte Modell:**
+    
+    1. **Modell herunterladen** (Button oben)
+    2. **In Annotate-Seite hochladen** als "Enhanced Model"
+    3. **Erweiterte Erkennung aktivieren** in den Einstellungen
+    
+    Das trainierte Modell wird automatisch Metadaten für bessere Vorhersagen nutzen!
+    """)
 
 st.title("KI-Training mit Metadaten")
 st.caption("Trainieren Sie die Gesichtserkennung mit Metadaten für bessere Genauigkeit")
@@ -23,12 +272,30 @@ with st.sidebar:
     
     # Daten-Upload
     st.subheader("Trainingsdaten")
-    training_files = st.file_uploader(
-        "JSON-Trainingsdaten hochladen", 
-        type=["json"], 
-        accept_multiple_files=True,
-        help="Laden Sie JSON-Dateien mit Annotations hoch"
+    
+    # Upload-Modus wählen
+    upload_mode = st.radio(
+        "Datenquelle wählen:",
+        ["JSON-Dateien hochladen", "Aus Musterfotos generieren"],
+        help="Wählen Sie, ob Sie bereits erstellte JSON-Dateien hochladen oder aus Fotos generieren möchten"
     )
+    
+    if upload_mode == "JSON-Dateien hochladen":
+        training_files = st.file_uploader(
+            "JSON-Trainingsdaten hochladen", 
+            type=["json"], 
+            accept_multiple_files=True,
+            help="Laden Sie JSON-Dateien mit Annotations hoch"
+        )
+        sample_photos = None
+    else:
+        training_files = None
+        sample_photos = st.file_uploader(
+            "Musterfotos hochladen", 
+            type=["jpg", "jpeg", "png", "bmp", "webp", "tif", "tiff"], 
+            accept_multiple_files=True,
+            help="Laden Sie Musterfotos hoch, aus denen Trainingsdaten generiert werden"
+        )
     
     # Trainings-Parameter
     st.subheader("Trainings-Parameter")
@@ -48,8 +315,8 @@ with st.sidebar:
     model_path = f"models/{model_name}.pkl"
 
 # Hauptbereich
-if not training_files:
-    st.info("Laden Sie JSON-Trainingsdaten in der Sidebar hoch, um zu starten.")
+if not training_files and not sample_photos:
+    st.info("Laden Sie JSON-Trainingsdaten oder Musterfotos in der Sidebar hoch, um zu starten.")
     
     # Beispiel-Trainingsdaten anzeigen
     with st.expander("Über das Training", expanded=False):
@@ -136,18 +403,104 @@ else:
     
     # Daten laden
     training_data = []
-    for file in training_files:
-        try:
-            data = json.load(file)
-            if isinstance(data, list):
-                training_data.extend(data)
-            else:
-                training_data.append(data)
-        except Exception as e:
-            st.error(f"Fehler beim Laden von {file.name}: {e}")
+    
+    if training_files:
+        # JSON-Dateien verarbeiten
+        st.subheader("JSON-Dateien verarbeiten")
+        for file in training_files:
+            try:
+                data = json.load(file)
+                
+                # Format validieren
+                if not validate_training_data_format(data):
+                    st.warning(f"Ungültiges Format in {file.name}. Überspringe Datei.")
+                    continue
+                
+                if isinstance(data, list):
+                    training_data.extend(data)
+                else:
+                    training_data.append(data)
+                    
+                st.success(f"{file.name} erfolgreich geladen")
+                
+            except Exception as e:
+                st.error(f"Fehler beim Laden von {file.name}: {e}")
+    
+    elif sample_photos and LOCATION_ENGINE_AVAILABLE:
+        # Musterfotos verarbeiten
+        st.subheader("Musterfotos verarbeiten")
+        
+        # Face Engine initialisieren
+        if "training_engine" not in st.session_state:
+            st.session_state["training_engine"] = FaceEngine(det_size=(640, 640))
+        
+        # Progress bar für Foto-Verarbeitung
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        for idx, photo in enumerate(sample_photos):
+            status_text.text(f"Verarbeite {photo.name}...")
+            progress_bar.progress((idx + 1) / len(sample_photos))
+            
+            try:
+                # Bild laden
+                data = photo.read()
+                image = Image.open(io.BytesIO(data)).convert("RGB")
+                img_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+                
+                # Gesichtserkennung
+                faces = st.session_state["training_engine"].analyze(img_bgr)
+                
+                # Metadaten extrahieren
+                metadata = extract_comprehensive_metadata(image)
+                
+                # Trainingsdaten-Eintrag erstellen
+                training_entry = {
+                    "image": photo.name,
+                    "metadata": metadata,
+                    "persons": []
+                }
+                
+                # Gesichter zu Trainingsdaten hinzufügen
+                for face in faces:
+                    person_data = {
+                        "age": face.get('age', 25),
+                        "gender": face.get('gender', 'unknown'),
+                        "quality_score": face.get('quality_score', 0.5),
+                        "bbox": face.get('bbox', [0, 0, 100, 100]),
+                        "emotion": face.get('emotion', 'neutral'),
+                        "pose": face.get('pose', {})
+                    }
+                    training_entry["persons"].append(person_data)
+                
+                training_data.append(training_entry)
+                
+            except Exception as e:
+                st.error(f"Fehler beim Verarbeiten von {photo.name}: {e}")
+        
+        # Progress bar zurücksetzen
+        progress_bar.empty()
+        status_text.empty()
+        
+        # Generierte Trainingsdaten als JSON zum Download anbieten
+        if training_data:
+            st.success(f"{len(training_data)} Trainingsbeispiele aus {len(sample_photos)} Fotos generiert!")
+            
+            # Download-Button für generierte Trainingsdaten
+            st.download_button(
+                "Generierte Trainingsdaten herunterladen",
+                data=json.dumps(training_data, ensure_ascii=False, indent=2),
+                file_name=f"generated_training_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                help="Laden Sie die generierten Trainingsdaten herunter, um sie später wieder zu verwenden"
+            )
+    
+    elif sample_photos and not LOCATION_ENGINE_AVAILABLE:
+        st.error("Location Engine nicht verfügbar. Kann keine Trainingsdaten aus Fotos generieren.")
     
     if training_data:
-        st.success(f"{len(training_data)} Trainingsbeispiele geladen")
+        if not (sample_photos and LOCATION_ENGINE_AVAILABLE):
+            st.success(f"{len(training_data)} Trainingsbeispiele geladen")
         
         # Datenanalyse
         col1, col2, col3 = st.columns(3)
@@ -180,12 +533,12 @@ else:
                 st.plotly_chart(fig_cameras, use_container_width=True)
             
             # Altersverteilung
-            if metadata_stats['ages']:
-                fig_ages = px.histogram(
-                    x=metadata_stats['ages'],
-                    nbins=20,
+            if metadata_stats['age_groups']:
+                fig_ages = px.bar(
+                    x=list(metadata_stats['age_groups'].keys()),
+                    y=list(metadata_stats['age_groups'].values()),
                     title="Altersverteilung in Trainingsdaten",
-                    labels={'x': 'Alter', 'y': 'Anzahl'}
+                    labels={'x': 'Altersgruppe', 'y': 'Anzahl'}
                 )
                 st.plotly_chart(fig_ages, use_container_width=True)
             
@@ -201,125 +554,47 @@ else:
         # Training starten
         st.header("Training starten")
         
-        if st.button("Training mit Metadaten starten", type="primary"):
-            with st.spinner("Training läuft..."):
-                try:
-                    # Trainer initialisieren
-                    metadata_weights = {
-                        'age': age_weight,
-                        'gender': gender_weight,
-                        'location': location_weight,
-                        'temporal': temporal_weight,
-                        'technical': technical_weight
-                    }
-                    
-                    trainer = MetadataAwareTrainer(model_path)
-                    
-                    # Training durchführen
-                    results = trainer.train(training_data, validation_split)
-                    
-                    # Ergebnisse anzeigen
-                    st.success("Training erfolgreich abgeschlossen!")
-                    
-                    # Trainings-Ergebnisse
-                    display_training_results(results)
-                    
-                    # Modell-Download
-                    if os.path.exists(model_path):
-                        with open(model_path, 'rb') as f:
-                            st.download_button(
-                                "Trainiertes Modell herunterladen",
-                                data=f.read(),
-                                file_name=f"{model_name}.pkl",
-                                mime="application/octet-stream"
-                            )
-                    
-                except Exception as e:
-                    st.error(f"Fehler beim Training: {e}")
-                    st.exception(e)
+        if ENHANCED_ENGINE_AVAILABLE:
+            if st.button("Training mit Metadaten starten", type="primary"):
+                with st.spinner("Training läuft..."):
+                    try:
+                        # Trainer initialisieren
+                        metadata_weights = {
+                            'age': age_weight,
+                            'gender': gender_weight,
+                            'location': location_weight,
+                            'temporal': temporal_weight,
+                            'technical': technical_weight
+                        }
+                        
+                        trainer = MetadataAwareTrainer(model_path)
+                        
+                        # Training durchführen
+                        results = trainer.train(training_data, validation_split)
+                        
+                        # Ergebnisse anzeigen
+                        st.success("Training erfolgreich abgeschlossen!")
+                        
+                        # Trainings-Ergebnisse
+                        display_training_results(results)
+                        
+                        # Modell-Download
+                        if os.path.exists(model_path):
+                            with open(model_path, 'rb') as f:
+                                st.download_button(
+                                    "Trainiertes Modell herunterladen",
+                                    data=f.read(),
+                                    file_name=f"{model_name}.pkl",
+                                    mime="application/octet-stream"
+                                )
+                        
+                    except Exception as e:
+                        st.error(f"Fehler beim Training: {e}")
+                        st.exception(e)
+        else:
+            st.info("Training-Funktionalität nur mit Enhanced Face Engine verfügbar.")
 
-def analyze_training_data(training_data: List[Dict]) -> Dict[str, Any]:
-    """Analysiert Trainingsdaten"""
-    stats = {
-        'camera_models': {},
-        'ages': [],
-        'genders': {},
-        'locations': {},
-        'quality_scores': []
-    }
-    
-    for item in training_data:
-        # Kamera-Modelle
-        metadata = item.get('metadata', {})
-        camera_model = metadata.get('camera_model', 'Unknown')
-        stats['camera_models'][camera_model] = stats['camera_models'].get(camera_model, 0) + 1
-        
-        # Personen-Daten
-        persons = item.get('persons', [])
-        for person in persons:
-            if person.get('age'):
-                stats['ages'].append(person['age'])
-            
-            if person.get('gender'):
-                gender = person['gender']
-                stats['genders'][gender] = stats['genders'].get(gender, 0) + 1
-            
-            if person.get('quality_score'):
-                stats['quality_scores'].append(person['quality_score'])
-        
-        # Standorte
-        location = metadata.get('location', {}).get('country', 'Unknown')
-        stats['locations'][location] = stats['locations'].get(location, 0) + 1
-    
-    return stats
 
-def display_training_results(results: Dict[str, Any]):
-    """Zeigt Trainings-Ergebnisse an"""
-    st.subheader("Trainings-Ergebnisse")
-    
-    # Metriken
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if 'training' in results and 'age_accuracy' in results['training']:
-            st.metric("Alter-Genauigkeit", f"{results['training']['age_accuracy']:.3f}")
-    
-    with col2:
-        if 'training' in results and 'gender_accuracy' in results['training']:
-            st.metric("Geschlecht-Genauigkeit", f"{results['training']['gender_accuracy']:.3f}")
-    
-    with col3:
-        if 'training' in results and 'quality_accuracy' in results['training']:
-            st.metric("Qualität-Genauigkeit", f"{results['training']['quality_accuracy']:.3f}")
-    
-    # Detaillierte Ergebnisse
-    with st.expander("Detaillierte Ergebnisse", expanded=False):
-        if 'training' in results:
-            st.write("**Training-Metriken:**")
-            for metric, value in results['training'].items():
-                st.write(f"- {metric}: {value:.3f}")
-        
-        if 'validation' in results:
-            st.write("**Validierungs-Metriken:**")
-            for metric, value in results['validation'].items():
-                st.write(f"- {metric}: {value:.3f}")
-        
-        if 'improvement' in results:
-            st.write("**Verbesserungen:**")
-            for metric, improvement in results['improvement'].items():
-                st.write(f"- {metric}: {improvement:+.3f}")
-    
-    # Modell-Integration
-    st.subheader("Modell-Integration")
-    st.info("""
-    **So integrieren Sie das trainierte Modell:**
-    
-    1. **Modell herunterladen** (Button oben)
-    2. **In Annotate-Seite hochladen** als "Enhanced Model"
-    3. **Erweiterte Erkennung aktivieren** in den Einstellungen
-    
-    Das trainierte Modell wird automatisch Metadaten für bessere Vorhersagen nutzen!
-    """)
 
 # Modell-Test-Bereich
 st.header("Modell-Test")

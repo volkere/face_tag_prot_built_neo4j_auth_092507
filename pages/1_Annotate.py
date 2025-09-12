@@ -9,6 +9,13 @@ import cv2
 from app.face_recognizer import FaceEngine, GalleryDB
 from app.location import extract_exif_gps, reverse_geocode, extract_comprehensive_metadata, get_location_details
 
+# Versuche Enhanced Face Engine zu importieren
+try:
+    from app.enhanced_face_engine import EnhancedFaceEngine
+    ENHANCED_ENGINE_AVAILABLE = True
+except ImportError:
+    ENHANCED_ENGINE_AVAILABLE = False
+
 st.title("Annotate: Fotos analysieren")
 st.caption("Erweiterte Gesichtserkennung, Metadaten-Extraktion und Standortanalyse")
 
@@ -42,8 +49,19 @@ with st.sidebar:
     
     # Qualitätsfilter
     st.subheader("Qualitätsfilter")
-    min_quality = st.slider("Min. Gesichtsqualität", 0.0, 1.0, 0.3, 0.1)
+    min_quality = st.slider("Min. Gesichtsqualität", 0.0, 1.0, 0.3, 0.05)
     min_face_size = st.slider("Min. Gesichtsgröße (Pixel)", 50, 200, 80, 10)
+    
+    # Erweiterte Erkennungsparameter
+    st.subheader("Erweiterte Erkennung")
+    enable_pose_analysis = st.checkbox("Pose-Analyse aktivieren", value=True)
+    enable_symmetry_check = st.checkbox("Symmetrie-Prüfung aktivieren", value=True)
+    enable_noise_analysis = st.checkbox("Rausch-Analyse aktivieren", value=True)
+    
+    # Enhanced Model Upload
+    st.subheader("Enhanced Model")
+    enhanced_model_file = st.file_uploader("Enhanced Model (.pkl)", type=["pkl"], key="enhanced_model_upload", help="Laden Sie ein trainiertes Enhanced Model hoch für bessere Metadaten-Integration")
+    use_enhanced_model = st.checkbox("Enhanced Recognition aktivieren", value=False, help="Verwendet das hochgeladene Enhanced Model für verbesserte Erkennung")
     
     # Datei-Upload
     st.subheader("Dateien")
@@ -68,6 +86,36 @@ if gallery_file is not None:
         st.success(f"Embeddings geladen: {len(db.people)} Personen.")
     except Exception as e:
         st.error(f"Fehler beim Laden der Embeddings: {e}")
+
+# Enhanced Model verarbeiten
+enhanced_engine = None
+if enhanced_model_file is not None and use_enhanced_model and ENHANCED_ENGINE_AVAILABLE:
+    import pickle
+    import tempfile
+    try:
+        # Temporäre Datei für das Enhanced Model erstellen
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pkl') as tmp_file:
+            tmp_file.write(enhanced_model_file.getvalue())
+            tmp_path = tmp_file.name
+        
+        # Enhanced Engine initialisieren
+        enhanced_engine = EnhancedFaceEngine()
+        enhanced_engine.load_models(tmp_path)
+        
+        # Temporäre Datei löschen
+        import os
+        os.unlink(tmp_path)
+        
+        st.success("Enhanced Model erfolgreich geladen!")
+        st.info("Das Enhanced Model wird für verbesserte Metadaten-Integration verwendet.")
+        
+    except Exception as e:
+        st.error(f"Fehler beim Laden des Enhanced Models: {e}")
+        enhanced_engine = None
+elif enhanced_model_file is not None and use_enhanced_model and not ENHANCED_ENGINE_AVAILABLE:
+    st.warning("Enhanced Face Engine nicht verfügbar.")
+elif use_enhanced_model and enhanced_model_file is None:
+    st.warning("Bitte laden Sie zuerst ein Enhanced Model hoch.")
 
 def draw_boxes(img_bgr, persons):
     img = img_bgr.copy()
@@ -99,23 +147,40 @@ def draw_boxes(img_bgr, persons):
         if p.get("age") is not None:
             label_parts.append(f"{p['age']}J")
         
-        # Qualität
+        # Qualität mit erweiterten Metriken
         if p.get("quality_score"):
-            label_parts.append(f"Q:{p['quality_score']:.2f}")
+            quality = p['quality_score']
+            if quality > 0.8:
+                quality_label = f"Q:*{quality:.2f}"
+            elif quality > 0.6:
+                quality_label = f"Q:o{quality:.2f}"
+            else:
+                quality_label = f"Q:.{quality:.2f}"
+            label_parts.append(quality_label)
         
         # Emotion
         if p.get("emotion"):
             label_parts.append(p["emotion"])
         
-        # Augen/Mund Status
+        # Augen/Mund Status mit Symbolen
         status_parts = []
         if p.get("eye_status"):
-            status_parts.append(f"Augen:{p['eye_status']}")
+            eye_symbol = {"open": "E", "closed": "C", "partially_open": "P"}.get(p["eye_status"], "E")
+            status_parts.append(f"{eye_symbol}{p['eye_status']}")
         if p.get("mouth_status"):
-            status_parts.append(f"Mund:{p['mouth_status']}")
+            mouth_symbol = {"open": "M", "closed": "C"}.get(p["mouth_status"], "M")
+            status_parts.append(f"{mouth_symbol}{p['mouth_status']}")
         
         if status_parts:
             label_parts.append(" ".join(status_parts))
+        
+        # Pose-Informationen (falls verfügbar)
+        if p.get("pose"):
+            pose = p["pose"]
+            if abs(pose.get("yaw", 0)) > 15:
+                label_parts.append(f"Y{pose['yaw']:.0f}°")
+            if abs(pose.get("pitch", 0)) > 15:
+                label_parts.append(f"P{pose['pitch']:.0f}°")
         
         txt = " | ".join(label_parts) if label_parts else f"{p.get('prob', 1.0):.2f}"
         
@@ -200,35 +265,56 @@ def display_face_analysis(persons):
     
     for i, person in enumerate(persons):
         with st.expander(f"Person {i+1}", expanded=False):
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)
             
             with col1:
                 # Basis-Informationen
                 st.write("**Identifikation:**")
                 if person.get("name"):
-                    st.success(f"{person['name']} (Ähnlichkeit: {person.get('similarity', 0):.2f})")
+                    similarity = person.get('similarity', 0)
+                    if similarity > 0.8:
+                        st.success(f"{person['name']} ({similarity:.2f})")
+                    elif similarity > 0.6:
+                        st.warning(f"{person['name']} ({similarity:.2f})")
+                    else:
+                        st.info(f"? {person['name']} ({similarity:.2f})")
                 else:
-                    st.warning("Unbekannte Person")
+                    st.warning("? Unbekannte Person")
                 
                 # Demografie
                 st.write("**Demografie:**")
                 if person.get("age"):
-                    st.write(f"Alter: {person['age']} Jahre")
+                    age = person['age']
+                    st.write(f"{age} Jahre")
                 if person.get("gender"):
-                    st.write(f"Geschlecht: {person['gender']}")
-                
-                # Qualität
-                if person.get("quality_score"):
-                    quality = person['quality_score']
-                    st.write("**Qualität:**")
-                    if quality > 0.7:
-                        st.success(f"Hohe Qualität ({quality:.2f})")
-                    elif quality > 0.4:
-                        st.warning(f"Mittlere Qualität ({quality:.2f})")
-                    else:
-                        st.error(f"Niedrige Qualität ({quality:.2f})")
+                    st.write(f"{person['gender']}")
             
             with col2:
+                # Qualität und technische Details
+                st.write("**Qualitätsbewertung:**")
+                if person.get("quality_score"):
+                    quality = person['quality_score']
+                    if quality > 0.8:
+                        st.success(f"* Exzellent ({quality:.2f})")
+                    elif quality > 0.6:
+                        st.warning(f"o Gut ({quality:.2f})")
+                    elif quality > 0.4:
+                        st.info(f". Mittel ({quality:.2f})")
+                    else:
+                        st.error(f"x Niedrig ({quality:.2f})")
+                
+                # Pose-Informationen
+                if person.get("pose"):
+                    pose = person["pose"]
+                    st.write("**Pose:**")
+                    if abs(pose.get("yaw", 0)) > 15:
+                        st.write(f"Y Seitlich: {pose['yaw']:.0f}°")
+                    if abs(pose.get("pitch", 0)) > 15:
+                        st.write(f"P Neigung: {pose['pitch']:.0f}°")
+                    if abs(pose.get("roll", 0)) > 15:
+                        st.write(f"R Rotation: {pose['roll']:.0f}°")
+            
+            with col3:
                 # Emotion und Status
                 st.write("**Gesichtsausdruck:**")
                 if person.get("emotion"):
@@ -236,13 +322,51 @@ def display_face_analysis(persons):
                 
                 # Augen-Status
                 if person.get("eye_status"):
-                    st.write(f"Augen: {person['eye_status']}")
+                    eye_status = person['eye_status']
+                    eye_emoji = {
+                        "open": "E", "closed": "C", "partially_open": "P"
+                    }.get(eye_status, "E")
+                    st.write(f"{eye_emoji} Augen: {eye_status}")
                 
                 # Mund-Status
                 if person.get("mouth_status"):
-                    st.write(f"Mund: {person['mouth_status']}")
+                    mouth_status = person['mouth_status']
+                    mouth_emoji = {
+                        "open": "M", "closed": "C"
+                    }.get(mouth_status, "M")
+                    st.write(f"{mouth_emoji} Mund: {mouth_status}")
+            
+            # Erweiterte Metriken (falls verfügbar)
+            if any(key in person for key in ['landmarks', 'symmetry_score', 'noise_score']):
+                with st.expander("Technische Details", expanded=False):
+                    col4, col5 = st.columns(2)
+                    
+                    with col4:
+                        if person.get("landmarks"):
+                            st.write("**Landmarks:**")
+                            st.write(f"Anzahl: {len(person['landmarks'])} Punkte")
+                        
+                        if person.get("symmetry_score"):
+                            st.write(f"**Symmetrie:** {person['symmetry_score']:.2f}")
+                    
+                    with col5:
+                        if person.get("noise_score"):
+                            st.write(f"**Rauschlevel:** {person['noise_score']:.2f}")
+                        
+                        if person.get("pose"):
+                            pose = person["pose"]
+                            st.write("**Pose-Details:**")
+                            st.write(f"Yaw: {pose.get('yaw', 0):.1f}°")
+                            st.write(f"Pitch: {pose.get('pitch', 0):.1f}°")
+                            st.write(f"Roll: {pose.get('roll', 0):.1f}°")
 
 results: List[Dict[str, Any]] = []
+
+# Status-Anzeige für Enhanced Model
+if enhanced_engine is not None:
+    st.success("Enhanced Model aktiv - Metadaten-Integration läuft!")
+elif use_enhanced_model:
+    st.warning("Enhanced Model nicht geladen - verwende Standard-Engine")
 
 if files:
     progress_bar = st.progress(0)
@@ -256,14 +380,41 @@ if files:
         img_bgr = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
         # Gesichtserkennung
-        faces = st.session_state["engine_annot"].analyze(img_bgr)
+        if enhanced_engine is not None:
+            # Enhanced Engine verwenden
+            faces = enhanced_engine.analyze_with_metadata(img_bgr, extract_comprehensive_metadata(image))
+        else:
+            # Standard Engine verwenden
+            faces = st.session_state["engine_annot"].analyze(img_bgr)
         
-        # Qualitätsfilter anwenden
+        # Erweiterte Qualitätsfilter anwenden
         filtered_faces = []
         for f in faces:
             face_size = (f['bbox'][2] - f['bbox'][0]) * (f['bbox'][3] - f['bbox'][1])
-            if (f.get('quality_score', 0.5) >= min_quality and 
-                face_size >= min_face_size):
+            
+            # Basis-Qualitätsfilter
+            quality_ok = f.get('quality_score', 0.5) >= min_quality
+            size_ok = face_size >= min_face_size
+            
+            # Erweiterte Filter basierend auf Einstellungen
+            pose_ok = True
+            if enable_pose_analysis and f.get('pose'):
+                pose = f['pose']
+                # Filtere extreme Posen heraus
+                if abs(pose.get('yaw', 0)) > 45 or abs(pose.get('pitch', 0)) > 30:
+                    pose_ok = False
+            
+            symmetry_ok = True
+            if enable_symmetry_check and f.get('symmetry_score', 0.5) < 0.3:
+                symmetry_ok = False
+            
+            noise_ok = True
+            if enable_noise_analysis and f.get('noise_score', 0.5) < 0.2:
+                noise_ok = False
+            
+            # Alle Filter müssen erfüllt sein
+            if (quality_ok and size_ok and pose_ok and 
+                symmetry_ok and noise_ok):
                 filtered_faces.append(f)
         
         persons = []
@@ -362,8 +513,51 @@ if files:
     
     status_text.text("Verarbeitung abgeschlossen!")
     
+    # Statistiken berechnen
+    total_faces = sum(len(r['persons']) for r in results)
+    total_identified = sum(1 for r in results for p in r['persons'] if p.get('name'))
+    avg_quality = np.mean([p.get('quality_score', 0) for r in results for p in r['persons'] if p.get('quality_score')])
+    
     # Download-Button für alle Ergebnisse
     st.success(f"{len(results)} Bilder erfolgreich verarbeitet")
+    
+    # Erweiterte Statistiken
+    with st.expander("Erkennungsstatistiken", expanded=False):
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.metric("Gesichter erkannt", total_faces)
+        
+        with col2:
+            identification_rate = (total_identified / total_faces * 100) if total_faces > 0 else 0
+            st.metric("Identifikationsrate", f"{identification_rate:.1f}%")
+        
+        with col3:
+            st.metric("Ø Qualität", f"{avg_quality:.2f}" if not np.isnan(avg_quality) else "N/A")
+        
+        # Detaillierte Aufschlüsselung
+        if total_faces > 0:
+            st.subheader("Detaillierte Analyse")
+            
+            # Qualitätsverteilung
+            quality_ranges = {'Exzellent (>0.8)': 0, 'Gut (0.6-0.8)': 0, 'Mittel (0.4-0.6)': 0, 'Niedrig (<0.4)': 0}
+            for r in results:
+                for p in r['persons']:
+                    quality = p.get('quality_score', 0)
+                    if quality > 0.8:
+                        quality_ranges['Exzellent (>0.8)'] += 1
+                    elif quality > 0.6:
+                        quality_ranges['Gut (0.6-0.8)'] += 1
+                    elif quality > 0.4:
+                        quality_ranges['Mittel (0.4-0.6)'] += 1
+                    else:
+                        quality_ranges['Niedrig (<0.4)'] += 1
+            
+            st.write("**Qualitätsverteilung:**")
+            for range_name, count in quality_ranges.items():
+                if count > 0:
+                    percentage = count / total_faces * 100
+                    st.write(f"• {range_name}: {count} ({percentage:.1f}%)")
     
     # Download-Button
     col1, col2 = st.columns(2)
