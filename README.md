@@ -55,7 +55,29 @@ Features
 
 Quickstart (UI)
 
-### Lokaler Start
+### Windows 11 (Empfohlen)
+
+#### Lokaler Start
+```cmd
+REM Automatische Installation
+install_windows.bat
+
+REM Start der App
+start_app.bat
+```
+
+#### Internet-Zugang mit Authentifizierung
+```cmd
+REM ngrok Installation
+install_ngrok_windows.bat
+
+REM Start mit Internet-Zugang
+start_with_ngrok_windows.bat
+```
+
+### macOS/Linux
+
+#### Lokaler Start
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
@@ -64,7 +86,7 @@ pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-### Internet-Zugang mit Authentifizierung
+#### Internet-Zugang mit Authentifizierung
 ```bash
 # Einfacher Start mit ngrok
 ./start_ngrok.sh
@@ -74,8 +96,8 @@ python3 start_with_ngrok.py
 ```
 
 **Login-Daten:**
-- **Administrator:** `admin` / `admin123`
-- **Benutzer:** `user` / `user123`
+- **Administrator:** Passwort `admin123`
+- **Benutzer:** Passwort `user123`
 
 UI-Seiten:
 - **Enroll**: Erstellen von Embeddings für Personen-Erkennung
@@ -150,9 +172,10 @@ Optimierungen für bessere Metadaten-Erkennung
 - **Progress-Tracking**: Echtzeit-Feedback während der Verarbeitung
 
 7. Sicherheit & Internet-Zugang
-- **Sichere Authentifizierung**: bcrypt-Passwort-Hashing
-- **Session-Management**: Sichere Cookies mit Ablaufzeit
-- **ngrok-Integration**: Temporärer Internet-Zugang
+- **Windows 11 Unterstützung**: Batch-Skripte für einfache Installation
+- **Sichere Authentifizierung**: Passwort-basierte Authentifizierung
+- **Session-Management**: Sichere Session-Verwaltung mit Streamlit
+- **ngrok-Integration**: Temporärer Internet-Zugang (Windows & macOS/Linux)
 - **Benutzer-Rollen**: Administrator und Standard-Benutzer
 - **Logout-Funktionalität**: Sichere Session-Beendigung
 - **Temporäre URLs**: Automatische URL-Generierung für Internet-Zugang
@@ -197,23 +220,54 @@ Trainingsdaten-Format:
 
 ## Internet-Zugang & Sicherheit
 
-### Voraussetzungen
+### Windows 11
+
+#### Voraussetzungen
+- Python 3.9+ installiert
+- Windows PowerShell verfügbar
+
+#### Start-Optionen
+
+##### Option 1: Batch-Skript (Empfohlen)
+```cmd
+install_windows.bat
+start_with_ngrok_windows.bat
+```
+
+##### Option 2: Manuelle ngrok-Installation
+```cmd
+install_ngrok_windows.bat
+start_with_ngrok_windows.bat
+```
+
+##### Option 3: Manuell
+```cmd
+REM Terminal 1: Streamlit starten
+python -m streamlit run streamlit_app.py --server.port 8501
+
+REM Terminal 2: ngrok starten
+ngrok http 8501
+```
+
+### macOS/Linux
+
+#### Voraussetzungen
 - ngrok installiert: `brew install ngrok/ngrok/ngrok`
 - Python-Pakete installiert: `pip install -r requirements.txt`
 
-### Start-Optionen
+#### Start-Optionen
 
-#### Option 1: Bash-Skript (Empfohlen)
+##### Option 1: Bash-Skript (Empfohlen)
 ```bash
 ./start_ngrok.sh
 ```
 
-#### Option 2: Python-Skript
+##### Option 2: Python-Skript
 ```bash
 python3 start_with_ngrok.py
 ```
 
-#### Option 3: Manuell
+##### Option 3: Manuell
 ```bash
 # Terminal 1: Streamlit starten
 streamlit run streamlit_app.py --server.port 8501
