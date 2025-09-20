@@ -4,36 +4,36 @@ Zeitkalkül agent_prot 0925
 Erweiterte Foto-Metadaten-Analyse mit Gesichtserkennung, EXIF-Extraktion, KI-Training und intelligenten Analysen.  
 (Enthält eine CLI und eine Streamlit Multi-Page UI (Enroll + Annotate + Analyze + Train + Neo4j) mit sicherem Internet-Zugang).
 
-## 📁 Branch-Übersicht
+## Branch-Übersicht
 
 Dieses Repository enthält verschiedene Varianten der App als separate Branches:
 
-### 🌟 **main** - Vollständige Version
+### **main** - Vollständige Version
 - **Alle Features**: Streamlit UI + CLI + Neo4j + Authentifizierung
 - **Plattformen**: Windows, macOS, Linux
 - **Zielgruppe**: Benutzer, die alle Funktionen benötigen
 
-### 🪟 **windows-optimized** - Windows-Version
+### **windows-optimized** - Windows-Version
 - **Windows-spezifisch**: Batch-Skripte, PowerShell-Integration
 - **Einfache Installation**: Automatische Setup-Skripte
 - **Zielgruppe**: Windows 11-Benutzer
 
-### 🐧 **macos-linux** - Unix-Version
+### **macos-linux** - Unix-Version
 - **Unix-optimiert**: Bash-Skripte, Homebrew-Integration
 - **Plattformen**: macOS, Linux
 - **Zielgruppe**: Unix/Linux-Benutzer
 
-### ⚡ **minimal-no-neo4j** - Leichtgewichtige Version
+### **minimal-no-neo4j** - Leichtgewichtige Version
 - **Ohne Neo4j**: Keine Graph-Datenbank-Abhängigkeiten
 - **Reduzierte Komplexität**: Fokus auf Kern-Features
 - **Zielgruppe**: Benutzer ohne Neo4j-Anforderungen
 
-### 💻 **cli-only** - Kommandozeilen-Version
+### **cli-only** - Kommandozeilen-Version
 - **Nur CLI**: Keine Web-UI, nur Kommandozeilen-Interface
 - **Performance**: Optimiert für Batch-Verarbeitung
 - **Zielgruppe**: Entwickler und Automatisierung
 
-### 🔧 **full-featured** - Entwicklungsversion
+### **full-featured** - Entwicklungsversion
 - **Alle Features**: Inklusive experimenteller Funktionen
 - **Entwicklungszwecke**: Für Entwickler und Tester
 - **Zielgruppe**: Entwickler und Power-User
@@ -89,7 +89,7 @@ Features
 
 Quickstart (UI)
 
-### 🚀 Installation & Verwendung
+### Installation & Verwendung
 
 #### Branch auswählen
 ```bash
@@ -320,18 +320,18 @@ Die App ist mit einem einfachen, aber sicheren Login-System geschützt:
 - Passwort: `user123`
 
 ### Sicherheitsfeatures
-- ✅ **Einfache Passwort-Authentifizierung** für schnellen Zugang
-- ✅ **Session-Management** mit Streamlit session_state
-- ✅ **Logout-Funktion** in der Sidebar
-- ✅ **Temporäre URLs** - Zugang endet beim Beenden des Tunnels
-- ✅ **Vollständige App-Funktionalität** nach Login
-- ✅ **Automatische Session-Bereinigung** beim Logout
+- **Einfache Passwort-Authentifizierung** für schnellen Zugang
+- **Session-Management** mit Streamlit session_state
+- **Logout-Funktion** in der Sidebar
+- **Temporäre URLs** - Zugang endet beim Beenden des Tunnels
+- **Vollständige App-Funktionalität** nach Login
+- **Automatische Session-Bereinigung** beim Logout
 
 ### Aktuelle Status
-- ✅ **App läuft erfolgreich** auf Port 8501
-- ✅ **ngrok-Tunnel aktiv** mit öffentlicher URL
-- ✅ **Authentifizierung funktioniert** einwandfrei
-- ✅ **Alle Features verfügbar** nach Login
+- **App läuft erfolgreich** auf Port 8501
+- **ngrok-Tunnel aktiv** mit öffentlicher URL
+- **Authentifizierung funktioniert** einwandfrei
+- **Alle Features verfügbar** nach Login
 
 ### Wichtige Hinweise
 - Die ngrok-URL ist **temporär** und wird beim Beenden ungültig
