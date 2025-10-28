@@ -24,7 +24,7 @@ def check_password():
         return True
 
     # Show input for password.
-    st.title("Zeitkalkül Metadata Recognizer - Login")
+    st.title("Face Tagging Metadata Recognizer - Login")
     st.markdown("Bitte geben Sie Ihr Passwort ein:")
     
     st.text_input(
@@ -45,7 +45,7 @@ with st.sidebar:
             del st.session_state[key]
         st.rerun()
 
-st.title("Zeitkalkül Metadata Recognizer")
+st.title("Face Tagging Metadata Recognizer")
 
 st.markdown("""
 Wähle links eine Seite:
