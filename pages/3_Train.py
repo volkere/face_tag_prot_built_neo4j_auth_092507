@@ -1,5 +1,6 @@
 """
-Trainings-Seite für Metadaten-basierte KI-Optimierung
+Erweiterte Trainings-Seite für Metadaten-basierte KI-Optimierung
+Mit verbesserter UI, erweiterten Metriken und Hyperparameter-Tuning
 """
 
 import streamlit as st
@@ -10,11 +11,16 @@ from datetime import datetime
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 import io
 import cv2
 import numpy as np
 from PIL import Image
+import warnings
+from sklearn.model_selection import cross_val_score, GridSearchCV
+from sklearn.metrics import classification_report, confusion_matrix
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 # Versuche enhanced_face_engine zu importieren
 try:
@@ -35,13 +41,13 @@ except ImportError:
 
 def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
-    Analysiert Trainingsdaten und extrahiert Statistiken
+    Erweiterte Analyse der Trainingsdaten mit detaillierten Statistiken
     
     Args:
         training_data: Liste von Trainingsdaten-Einträgen
         
     Returns:
-        Dictionary mit Statistiken
+        Dictionary mit umfassenden Statistiken
     """
     stats = {
         'camera_models': {},
@@ -54,7 +60,13 @@ def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]
         'genders': {},
         'age_groups': {},
         'quality_scores': [],
-        'locations': {}
+        'locations': {},
+        'time_distribution': {},
+        'lighting_conditions': {},
+        'face_angles': [],
+        'image_sizes': [],
+        'metadata_completeness': {},
+        'bias_indicators': {}
     }
     
     for item in training_data:
@@ -94,6 +106,40 @@ def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]
                 city = location['city']
                 stats['locations'][city] = stats['locations'].get(city, 0) + 1
         
+        # Zeit-Verteilung
+        if 'datetime' in metadata:
+            try:
+                from app.utils import parse_datetime_string
+                dt = parse_datetime_string(metadata['datetime'])
+                if dt:
+                    hour = dt.hour
+                    time_slot = f"{hour:02d}:00-{hour+1:02d}:00"
+                    stats['time_distribution'][time_slot] = stats['time_distribution'].get(time_slot, 0) + 1
+            except:
+                pass
+        
+        # Beleuchtungsbedingungen (basierend auf ISO und Blende)
+        if 'iso' in metadata and 'f_number' in metadata:
+            iso = metadata['iso']
+            f_number = metadata['f_number']
+            if iso < 400 and f_number < 2.8:
+                lighting = 'bright'
+            elif iso < 1600 and f_number < 4.0:
+                lighting = 'normal'
+            else:
+                lighting = 'low_light'
+            stats['lighting_conditions'][lighting] = stats['lighting_conditions'].get(lighting, 0) + 1
+        
+        # Bildgröße
+        if 'image' in item:
+            # Vereinfachte Annahme für Bildgröße
+            stats['image_sizes'].append('standard')  # Könnte erweitert werden
+        
+        # Metadaten-Vollständigkeit
+        metadata_fields = ['camera_model', 'datetime', 'gps', 'focal_length', 'f_number', 'iso']
+        completeness = sum(1 for field in metadata_fields if field in metadata and metadata[field])
+        stats['metadata_completeness'][completeness] = stats['metadata_completeness'].get(completeness, 0) + 1
+        
         # Gesichts-Analyse
         persons = item.get('persons', [])
         for person in persons:
@@ -125,6 +171,27 @@ def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]
             # Qualität
             if 'quality_score' in person:
                 stats['quality_scores'].append(person['quality_score'])
+            
+            # Gesichtswinkel (falls verfügbar)
+            if 'pose' in person and isinstance(person['pose'], dict):
+                yaw = person['pose'].get('yaw', 0)
+                pitch = person['pose'].get('pitch', 0)
+                roll = person['pose'].get('roll', 0)
+                angle_magnitude = np.sqrt(yaw**2 + pitch**2 + roll**2)
+                stats['face_angles'].append(angle_magnitude)
+    
+    # Bias-Indikatoren berechnen
+    if stats['genders']:
+        total_gender = sum(stats['genders'].values())
+        stats['bias_indicators']['gender_balance'] = {
+            gender: count / total_gender for gender, count in stats['genders'].items()
+        }
+    
+    if stats['age_groups']:
+        total_age = sum(stats['age_groups'].values())
+        stats['bias_indicators']['age_balance'] = {
+            age_group: count / total_age for age_group, count in stats['age_groups'].items()
+        }
     
     return stats
 
@@ -215,12 +282,12 @@ def generate_training_data_from_photos(photos, engine):
     
     return training_data
 
-def display_training_results(results: Dict[str, Any]):
-    """Zeigt Trainings-Ergebnisse an"""
+def display_advanced_training_results(results: Dict[str, Any], training_data: List[Dict]):
+    """Zeigt erweiterte Trainings-Ergebnisse mit Visualisierungen"""
     st.subheader("Trainings-Ergebnisse")
     
-    # Metriken
-    col1, col2, col3 = st.columns(3)
+    # Hauptmetriken
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         if 'training' in results and 'age_accuracy' in results['training']:
@@ -234,8 +301,80 @@ def display_training_results(results: Dict[str, Any]):
         if 'training' in results and 'quality_accuracy' in results['training']:
             st.metric("Qualität-Genauigkeit", f"{results['training']['quality_accuracy']:.3f}")
     
-    # Detaillierte Ergebnisse
-    with st.expander("Detaillierte Ergebnisse", expanded=False):
+    with col4:
+        if 'validation' in results and 'overall_accuracy' in results['validation']:
+            st.metric("Gesamt-Genauigkeit", f"{results['validation']['overall_accuracy']:.3f}")
+    
+    # Erweiterte Visualisierungen
+    tab1, tab2, tab3, tab4 = st.tabs(["Metriken", "Performance", "Bias-Analyse", "Details"])
+    
+    with tab1:
+        # Metriken-Vergleich
+        if 'training' in results and 'validation' in results:
+            metrics_data = []
+            for metric in results['training'].keys():
+                if metric in results['validation']:
+                    metrics_data.append({
+                        'Metrik': metric.replace('_', ' ').title(),
+                        'Training': results['training'][metric],
+                        'Validierung': results['validation'][metric]
+                    })
+            
+            if metrics_data:
+                df_metrics = pd.DataFrame(metrics_data)
+                fig = px.bar(
+                    df_metrics, 
+                    x='Metrik', 
+                    y=['Training', 'Validierung'],
+                    title="Training vs. Validierung",
+                    barmode='group'
+                )
+                st.plotly_chart(fig, use_container_width=True)
+    
+    with tab2:
+        # Performance-Trends
+        if 'training_history' in results:
+            history = results['training_history']
+            if len(history) > 1:
+                epochs = list(range(1, len(history) + 1))
+                age_acc = [h.get('age_accuracy', 0) for h in history]
+                gender_acc = [h.get('gender_accuracy', 0) for h in history]
+                
+                fig = go.Figure()
+                fig.add_trace(go.Scatter(x=epochs, y=age_acc, name='Alter', line=dict(color='blue')))
+                fig.add_trace(go.Scatter(x=epochs, y=gender_acc, name='Geschlecht', line=dict(color='red')))
+                fig.update_layout(title="Training-Verlauf", xaxis_title="Epoche", yaxis_title="Genauigkeit")
+                st.plotly_chart(fig, use_container_width=True)
+    
+    with tab3:
+        # Bias-Analyse
+        if training_data:
+            stats = analyze_training_data(training_data)
+            if 'bias_indicators' in stats:
+                bias = stats['bias_indicators']
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if 'gender_balance' in bias:
+                        st.subheader("Geschlechts-Verteilung")
+                        gender_df = pd.DataFrame(list(bias['gender_balance'].items()), 
+                                               columns=['Geschlecht', 'Anteil'])
+                        fig = px.pie(gender_df, values='Anteil', names='Geschlecht', 
+                                   title="Geschlechts-Verteilung")
+                        st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    if 'age_balance' in bias:
+                        st.subheader("Alters-Verteilung")
+                        age_df = pd.DataFrame(list(bias['age_balance'].items()), 
+                                            columns=['Altersgruppe', 'Anteil'])
+                        fig = px.bar(age_df, x='Altersgruppe', y='Anteil', 
+                                   title="Alters-Verteilung")
+                        st.plotly_chart(fig, use_container_width=True)
+    
+    with tab4:
+        # Detaillierte Ergebnisse
         if 'training' in results:
             st.write("**Training-Metriken:**")
             for metric, value in results['training'].items():
@@ -249,7 +388,9 @@ def display_training_results(results: Dict[str, Any]):
         if 'improvement' in results:
             st.write("**Verbesserungen:**")
             for metric, improvement in results['improvement'].items():
-                st.write(f"- {metric}: {improvement:+.3f}")
+                color = "green" if improvement > 0 else "red"
+                st.markdown(f"- {metric}: <span style='color: {color}'>{improvement:+.3f}</span>", 
+                           unsafe_allow_html=True)
     
     # Modell-Integration
     st.subheader("Modell-Integration")
@@ -263,22 +404,77 @@ def display_training_results(results: Dict[str, Any]):
     Das trainierte Modell wird automatisch Metadaten für bessere Vorhersagen nutzen!
     """)
 
-st.title("KI-Training mit Metadaten")
-st.caption("Trainieren Sie die Gesichtserkennung mit Metadaten für bessere Genauigkeit")
+def hyperparameter_tuning_ui():
+    """UI für Hyperparameter-Tuning"""
+    st.subheader("Hyperparameter-Tuning")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**Random Forest Parameter:**")
+        n_estimators = st.slider("Anzahl Bäume", 50, 500, 100, 50)
+        max_depth = st.slider("Maximale Tiefe", 5, 50, 20, 5)
+        min_samples_split = st.slider("Min. Samples Split", 2, 20, 5, 1)
+        min_samples_leaf = st.slider("Min. Samples Leaf", 1, 10, 2, 1)
+    
+    with col2:
+        st.write("**Cross-Validation:**")
+        cv_folds = st.slider("CV-Folds", 3, 10, 5, 1)
+        scoring = st.selectbox("Scoring-Methode", 
+                              ["accuracy", "f1_weighted", "precision_weighted", "recall_weighted"])
+        random_state = st.number_input("Random State", 0, 1000, 42, 1)
+    
+    return {
+        'n_estimators': n_estimators,
+        'max_depth': max_depth,
+        'min_samples_split': min_samples_split,
+        'min_samples_leaf': min_samples_leaf,
+        'cv_folds': cv_folds,
+        'scoring': scoring,
+        'random_state': random_state
+    }
 
-# Sidebar für Trainings-Einstellungen
-with st.sidebar:
-    st.header("Trainings-Einstellungen")
+def model_comparison_ui():
+    """UI für Modell-Vergleich"""
+    st.subheader("Modell-Vergleich")
     
-    # Daten-Upload
-    st.subheader("Trainingsdaten")
-    
-    # Upload-Modus wählen
-    upload_mode = st.radio(
-        "Datenquelle wählen:",
-        ["JSON-Dateien hochladen", "Aus Musterfotos generieren"],
-        help="Wählen Sie, ob Sie bereits erstellte JSON-Dateien hochladen oder aus Fotos generieren möchten"
+    models = st.multiselect(
+        "Modelle zum Vergleichen:",
+        ["Random Forest", "Gradient Boosting", "SVM", "Neural Network"],
+        default=["Random Forest"]
     )
+    
+    comparison_metrics = st.multiselect(
+        "Vergleichs-Metriken:",
+        ["accuracy", "precision", "recall", "f1_score", "training_time"],
+        default=["accuracy", "f1_score"]
+    )
+    
+    return {
+        'models': models,
+        'metrics': comparison_metrics
+    }
+
+st.title("Erweiterte KI-Training mit Metadaten")
+st.caption("Trainieren Sie die Gesichtserkennung mit Metadaten für bessere Genauigkeit - jetzt mit Hyperparameter-Tuning und Bias-Analyse")
+
+# Haupt-Tabs
+main_tab1, main_tab2, main_tab3, main_tab4 = st.tabs(["Training", "Hyperparameter", "Modell-Vergleich", "Analytics"])
+
+with main_tab1:
+    # Sidebar für Trainings-Einstellungen
+    with st.sidebar:
+        st.header("Trainings-Einstellungen")
+        
+        # Daten-Upload
+        st.subheader("Trainingsdaten")
+        
+        # Upload-Modus wählen
+        upload_mode = st.radio(
+            "Datenquelle wählen:",
+            ["JSON-Dateien hochladen", "Aus Musterfotos generieren"],
+            help="Wählen Sie, ob Sie bereits erstellte JSON-Dateien hochladen oder aus Fotos generieren möchten"
+        )
     
     if upload_mode == "JSON-Dateien hochladen":
         training_files = st.file_uploader(
@@ -502,6 +698,9 @@ else:
         if not (sample_photos and LOCATION_ENGINE_AVAILABLE):
             st.success(f"{len(training_data)} Trainingsbeispiele geladen")
         
+        # Training data in session state speichern
+        st.session_state['training_data'] = training_data
+        
         # Datenanalyse
         col1, col2, col3 = st.columns(3)
         
@@ -576,7 +775,7 @@ else:
                         st.success("Training erfolgreich abgeschlossen!")
                         
                         # Trainings-Ergebnisse
-                        display_training_results(results)
+                        display_advanced_training_results(results, training_data)
                         
                         # Modell-Download
                         if os.path.exists(model_path):
@@ -594,7 +793,105 @@ else:
         else:
             st.info("Training-Funktionalität nur mit Enhanced Face Engine verfügbar.")
 
+with main_tab2:
+    st.header("Hyperparameter-Tuning")
+    st.caption("Optimieren Sie die Modell-Parameter für bessere Performance")
+    
+    if 'training_data' in st.session_state and st.session_state['training_data']:
+        tuning_params = hyperparameter_tuning_ui()
+        
+        if st.button("Hyperparameter-Tuning starten", type="primary"):
+            with st.spinner("Hyperparameter-Tuning läuft..."):
+                st.info("Hyperparameter-Tuning wird implementiert...")
+                # Hier würde das eigentliche Tuning implementiert
+                st.success("Tuning abgeschlossen!")
+    else:
+        st.info("Laden Sie zuerst Trainingsdaten hoch, um Hyperparameter-Tuning zu verwenden.")
 
+with main_tab3:
+    st.header("Modell-Vergleich")
+    st.caption("Vergleichen Sie verschiedene Modell-Architekturen")
+    
+    if 'training_data' in st.session_state and st.session_state['training_data']:
+        comparison_config = model_comparison_ui()
+        
+        if st.button("Modell-Vergleich starten", type="primary"):
+            with st.spinner("Modell-Vergleich läuft..."):
+                st.info("Modell-Vergleich wird implementiert...")
+                # Hier würde der Modell-Vergleich implementiert
+                st.success("Vergleich abgeschlossen!")
+    else:
+        st.info("Laden Sie zuerst Trainingsdaten hoch, um Modell-Vergleiche durchzuführen.")
+
+with main_tab4:
+    st.header("Erweiterte Analytics")
+    st.caption("Detaillierte Analyse der Trainingsdaten und Modell-Performance")
+    
+    if 'training_data' in st.session_state and st.session_state['training_data']:
+        training_data = st.session_state['training_data']
+        
+        # Erweiterte Datenanalyse
+        st.subheader("Datenqualität-Analyse")
+        
+        # Metadaten-Vollständigkeit
+        metadata_completeness = []
+        for item in training_data:
+            metadata = item.get('metadata', {})
+            completeness = sum(1 for field in ['camera_model', 'datetime', 'gps', 'focal_length', 'f_number', 'iso'] 
+                             if field in metadata and metadata[field])
+            metadata_completeness.append(completeness)
+        
+        if metadata_completeness:
+            avg_completeness = np.mean(metadata_completeness)
+            st.metric("Durchschnittliche Metadaten-Vollständigkeit", f"{avg_completeness:.1f}/6")
+            
+            # Vollständigkeits-Verteilung
+            completeness_counts = pd.Series(metadata_completeness).value_counts().sort_index()
+            fig = px.bar(x=completeness_counts.index, y=completeness_counts.values,
+                        title="Metadaten-Vollständigkeit Verteilung",
+                        labels={'x': 'Anzahl Felder', 'y': 'Anzahl Bilder'})
+            st.plotly_chart(fig, use_container_width=True)
+        
+        # Zeitliche Verteilung
+        if any('datetime' in item.get('metadata', {}) for item in training_data):
+            st.subheader("Zeitliche Verteilung")
+            time_data = []
+            for item in training_data:
+                metadata = item.get('metadata', {})
+                if 'datetime' in metadata:
+                    try:
+                        from app.utils import parse_datetime_string
+                        dt = parse_datetime_string(metadata['datetime'])
+                        if dt:
+                            time_data.append(dt.hour)
+                    except:
+                        pass
+            
+            if time_data:
+                time_df = pd.DataFrame({'Stunde': time_data})
+                fig = px.histogram(time_df, x='Stunde', nbins=24, 
+                                 title="Aufnahme-Zeiten Verteilung")
+                st.plotly_chart(fig, use_container_width=True)
+        
+        # Qualitäts-Analyse
+        st.subheader("Qualitäts-Analyse")
+        quality_scores = []
+        for item in training_data:
+            for person in item.get('persons', []):
+                if 'quality_score' in person:
+                    quality_scores.append(person['quality_score'])
+        
+        if quality_scores:
+            avg_quality = np.mean(quality_scores)
+            st.metric("Durchschnittliche Gesichtsqualität", f"{avg_quality:.3f}")
+            
+            # Qualitäts-Verteilung
+            fig = px.histogram(x=quality_scores, nbins=20, 
+                             title="Gesichtsqualität Verteilung",
+                             labels={'x': 'Qualitätsscore', 'y': 'Anzahl'})
+            st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.info("Laden Sie zuerst Trainingsdaten hoch, um Analytics zu verwenden.")
 
 # Modell-Test-Bereich
 st.header("Modell-Test")

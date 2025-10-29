@@ -1,15 +1,15 @@
-# Neo4j Datenmodell für Gesichtserkennungs-Daten
+ Neo4j Datenmodell für Gesichtserkennungs-Daten
 
-## Übersicht
+ Übersicht
 
 Dieses Dokument beschreibt das Neo4j-Datenmodell für die Speicherung und Abfrage von Gesichtserkennungs-Daten. Das Modell ermöglicht es, komplexe Beziehungen zwischen Bildern, Gesichtern, Personen und Standorten zu modellieren.
 
-## Entitäten (Nodes)
+ Entitäten (Nodes)
 
-### 1. Image (Bild)
+ 1. Image (Bild)
 Repräsentiert ein einzelnes Bild mit seinen Metadaten.
 
-**Eigenschaften:**
+Eigenschaften:
 - `id`: Eindeutige UUID
 - `filename`: Dateiname des Bildes
 - `datetime`: Aufnahmedatum und -zeit
@@ -24,7 +24,7 @@ Repräsentiert ein einzelnes Bild mit seinen Metadaten.
 - `image_height`: Bildhöhe in Pixeln
 - `created_at`: Erstellungszeitstempel
 
-**Beispiel:**
+Beispiel:
 ```cypher
 CREATE (i:Image {
     id: "550e8400-e29b-41d4-a716-446655440000",
@@ -43,10 +43,10 @@ CREATE (i:Image {
 })
 ```
 
-### 2. Face (Gesicht)
+ 2. Face (Gesicht)
 Repräsentiert ein erkanntes Gesicht mit seinen Eigenschaften.
 
-**Eigenschaften:**
+Eigenschaften:
 - `id`: Eindeutige UUID
 - `age`: Geschätztes Alter
 - `gender`: Geschlecht (male/female)
@@ -61,7 +61,7 @@ Repräsentiert ein erkanntes Gesicht mit seinen Eigenschaften.
 - `similarity`: Ähnlichkeit zu bekannter Person (0.0-1.0)
 - `created_at`: Erstellungszeitstempel
 
-**Beispiel:**
+Beispiel:
 ```cypher
 CREATE (f:Face {
     id: "550e8400-e29b-41d4-a716-446655440001",
@@ -80,17 +80,17 @@ CREATE (f:Face {
 })
 ```
 
-### 3. Person (Person)
+ 3. Person (Person)
 Repräsentiert eine identifizierte Person.
 
-**Eigenschaften:**
+Eigenschaften:
 - `id`: Eindeutige UUID
 - `name`: Name der Person
 - `created_at`: Erstellungszeitstempel
 - `first_seen`: Erstes Auftreten
 - `last_seen`: Letztes Auftreten
 
-**Beispiel:**
+Beispiel:
 ```cypher
 CREATE (p:Person {
     id: "550e8400-e29b-41d4-a716-446655440002",
@@ -101,10 +101,10 @@ CREATE (p:Person {
 })
 ```
 
-### 4. Location (Standort)
+ 4. Location (Standort)
 Repräsentiert einen geografischen Standort.
 
-**Eigenschaften:**
+Eigenschaften:
 - `id`: Eindeutige UUID
 - `full_address`: Vollständige Adresse
 - `country`: Land
@@ -114,7 +114,7 @@ Repräsentiert einen geografischen Standort.
 - `longitude`: Längengrad
 - `created_at`: Erstellungszeitstempel
 
-**Beispiel:**
+Beispiel:
 ```cypher
 CREATE (l:Location {
     id: "550e8400-e29b-41d4-a716-446655440003",
@@ -128,53 +128,53 @@ CREATE (l:Location {
 })
 ```
 
-## Beziehungen (Relationships)
+ Beziehungen (Relationships)
 
-### 1. APPEARS_IN
+ 1. APPEARS_IN
 Verbindet ein Gesicht mit dem Bild, in dem es erscheint.
 
-**Richtung:** `(Face)-[APPEARS_IN]->(Image)`
+Richtung: `(Face)-[APPEARS_IN]->(Image)`
 
-**Eigenschaften:**
+Eigenschaften:
 - `created_at`: Erstellungszeitstempel
 
-**Beispiel:**
+Beispiel:
 ```cypher
 MATCH (f:Face {id: "face-id"}), (i:Image {id: "image-id"})
 CREATE (f)-[r:APPEARS_IN {created_at: datetime()}]->(i)
 ```
 
-### 2. BELONGS_TO
+ 2. BELONGS_TO
 Verbindet ein Gesicht mit einer identifizierten Person.
 
-**Richtung:** `(Face)-[BELONGS_TO]->(Person)`
+Richtung: `(Face)-[BELONGS_TO]->(Person)`
 
-**Eigenschaften:**
+Eigenschaften:
 - `created_at`: Erstellungszeitstempel
 
-**Beispiel:**
+Beispiel:
 ```cypher
 MATCH (f:Face {id: "face-id"}), (p:Person {id: "person-id"})
 CREATE (f)-[r:BELONGS_TO {created_at: datetime()}]->(p)
 ```
 
-### 3. TAKEN_AT
+ 3. TAKEN_AT
 Verbindet ein Bild mit dem Standort, an dem es aufgenommen wurde.
 
-**Richtung:** `(Image)-[TAKEN_AT]->(Location)`
+Richtung: `(Image)-[TAKEN_AT]->(Location)`
 
-**Eigenschaften:**
+Eigenschaften:
 - `created_at`: Erstellungszeitstempel
 
-**Beispiel:**
+Beispiel:
 ```cypher
 MATCH (i:Image {id: "image-id"}), (l:Location {id: "location-id"})
 CREATE (i)-[r:TAKEN_AT {created_at: datetime()}]->(l)
 ```
 
-## Constraints und Indizes
+ Constraints und Indizes
 
-### Constraints (Eindeutigkeit)
+ Constraints (Eindeutigkeit)
 ```cypher
 CREATE CONSTRAINT image_id_unique FOR (i:Image) REQUIRE i.id IS UNIQUE
 CREATE CONSTRAINT person_id_unique FOR (p:Person) REQUIRE p.id IS UNIQUE
@@ -182,7 +182,7 @@ CREATE CONSTRAINT face_id_unique FOR (f:Face) REQUIRE f.id IS UNIQUE
 CREATE CONSTRAINT location_id_unique FOR (l:Location) REQUIRE l.id IS UNIQUE
 ```
 
-### Indizes (Performance)
+ Indizes (Performance)
 ```cypher
 CREATE INDEX image_filename FOR (i:Image) ON (i.filename)
 CREATE INDEX person_name FOR (p:Person) ON (p.name)
@@ -194,16 +194,16 @@ CREATE INDEX location_country FOR (l:Location) ON (l.country)
 CREATE INDEX image_datetime FOR (i:Image) ON (i.datetime)
 ```
 
-## Beispiel-Abfragen
+ Beispiel-Abfragen
 
-### 1. Alle Gesichter einer Person finden
+ 1. Alle Gesichter einer Person finden
 ```cypher
 MATCH (p:Person {name: "Max Mustermann"})-[:BELONGS_TO]-(f:Face)-[:APPEARS_IN]-(i:Image)
 RETURN f, i, p
 ORDER BY i.datetime DESC
 ```
 
-### 2. Alle Gesichter mit bestimmter Emotion finden
+ 2. Alle Gesichter mit bestimmter Emotion finden
 ```cypher
 MATCH (f:Face {emotion: "happy"})-[:APPEARS_IN]-(i:Image)
 OPTIONAL MATCH (f)-[:BELONGS_TO]-(p:Person)
@@ -211,7 +211,7 @@ RETURN f, i, p
 ORDER BY f.quality_score DESC
 ```
 
-### 3. Alle Gesichter an einem bestimmten Standort finden
+ 3. Alle Gesichter an einem bestimmten Standort finden
 ```cypher
 MATCH (f:Face)-[:APPEARS_IN]-(i:Image)-[:TAKEN_AT]-(l:Location)
 WHERE l.country = "Deutschland" AND l.city = "Berlin"
@@ -220,7 +220,7 @@ RETURN f, i, l, p
 ORDER BY i.datetime DESC
 ```
 
-### 4. Statistiken abrufen
+ 4. Statistiken abrufen
 ```cypher
 // Gesamtanzahl der Bilder
 MATCH (i:Image) RETURN count(i) as total_images
@@ -238,7 +238,7 @@ RETURN avg(f.quality_score) as avg_quality,
        max(f.quality_score) as max_quality
 ```
 
-### 5. Komplexe Abfrage: Personen mit hoher Gesichtsqualität
+ 5. Komplexe Abfrage: Personen mit hoher Gesichtsqualität
 ```cypher
 MATCH (p:Person)-[:BELONGS_TO]-(f:Face)
 WHERE f.quality_score > 0.8
@@ -247,54 +247,54 @@ RETURN p.name, count(faces) as face_count, avg_quality
 ORDER BY avg_quality DESC
 ```
 
-## Datenmodell-Diagramm
+ Datenmodell-Diagramm
 
 ```
-┌─────────────┐    APPEARS_IN    ┌─────────────┐    TAKEN_AT    ┌─────────────┐
-│    Face     │ ────────────────► │    Image    │ ──────────────► │  Location   │
-│             │                  │             │                 │             │
-│ - id        │                  │ - id        │                 │ - id        │
-│ - age       │                  │ - filename  │                 │ - country   │
-│ - gender    │                  │ - datetime  │                 │ - city      │
-│ - emotion   │                  │ - camera_*  │                 │ - latitude  │
-│ - quality   │                  │ - image_*   │                 │ - longitude │
-│ - bbox_*    │                  │             │                 │             │
-│ - similarity│                  │             │                 │             │
-└─────────────┘                  └─────────────┘                 └─────────────┘
-       │
-       │ BELONGS_TO
-       ▼
-┌─────────────┐
-│   Person    │
-│             │
-│ - id        │
-│ - name      │
-│ - first_seen│
-│ - last_seen │
-└─────────────┘
+    APPEARS_IN        TAKEN_AT    
+    Face           Image        Location   
+                                                                          
+ - id                           - id                          - id        
+ - age                          - filename                    - country   
+ - gender                       - datetime                    - city      
+ - emotion                      - camera_                    - latitude  
+ - quality                      - image_                     - longitude 
+ - bbox_                                                                 
+ - similarity                                                             
+                                   
+       
+        BELONGS_TO
+       
+
+   Person    
+             
+ - id        
+ - name      
+ - first_seen
+ - last_seen 
+
 ```
 
-## Vorteile des Neo4j-Modells
+ Vorteile des Neo4j-Modells
 
-1. **Flexibilität**: Einfache Erweiterung um neue Entitäten und Beziehungen
-2. **Performance**: Optimierte Abfragen für Graph-Traversierung
-3. **Skalierbarkeit**: Effiziente Speicherung und Abfrage großer Datenmengen
-4. **Komplexe Abfragen**: Natürliche Modellierung von Beziehungen zwischen Entitäten
-5. **Visualisierung**: Einfache Darstellung von Beziehungen in Graph-Form
+1. Flexibilität: Einfache Erweiterung um neue Entitäten und Beziehungen
+2. Performance: Optimierte Abfragen für Graph-Traversierung
+3. Skalierbarkeit: Effiziente Speicherung und Abfrage großer Datenmengen
+4. Komplexe Abfragen: Natürliche Modellierung von Beziehungen zwischen Entitäten
+5. Visualisierung: Einfache Darstellung von Beziehungen in Graph-Form
 
-## Migration und Wartung
+ Migration und Wartung
 
-### Datenbank leeren
+ Datenbank leeren
 ```cypher
 MATCH (n) DETACH DELETE n
 ```
 
-### Backup erstellen
+ Backup erstellen
 ```bash
 neo4j-admin dump --database=neo4j --to=/path/to/backup.dump
 ```
 
-### Backup wiederherstellen
+ Backup wiederherstellen
 ```bash
 neo4j-admin load --database=neo4j --from=/path/to/backup.dump
 ```

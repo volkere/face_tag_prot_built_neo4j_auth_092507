@@ -295,6 +295,10 @@ class EnhancedFaceEngine:
             if total > 5:
                 self.time_gender_bias[hour] = counts['female'] / total  # Frauen-Anteil
     
+    def analyze_with_metadata(self, img_bgr: np.ndarray, metadata: Dict) -> List[Dict]:
+        """Analyse mit Metadaten-Integration - kompatibel mit Standard FaceEngine"""
+        return self.predict_with_metadata(img_bgr, metadata)
+    
     def predict_with_metadata(self, img_bgr: np.ndarray, metadata: Dict) -> List[Dict]:
         """Vorhersage mit Metadaten-Integration"""
         # Basis-Gesichtserkennung
@@ -326,7 +330,7 @@ class EnhancedFaceEngine:
         age = int(getattr(face, "age", -1)) if getattr(face, "age", None) is not None else None
         emb = face.embedding.astype(np.float32)
         
-        return {
+        features = {
             "bbox": box,
             "prob": prob,
             "embedding": emb,
@@ -334,6 +338,22 @@ class EnhancedFaceEngine:
             "gender": gender_str,
             "quality_score": 0.5  # Standard-Qualität
         }
+        
+        # Erweiterte Attribute hinzufügen (kompatibel mit Standard FaceEngine)
+        # Pose-Schätzung (falls verfügbar)
+        if hasattr(face, 'pose'):
+            features['pose'] = {
+                'yaw': float(getattr(face.pose, 'yaw', 0)),
+                'pitch': float(getattr(face.pose, 'pitch', 0)),
+                'roll': float(getattr(face.pose, 'roll', 0))
+            }
+        
+        # Landmarks für Qualitätsbewertung
+        if hasattr(face, 'kps') and face.kps is not None:
+            landmarks = face.kps.astype(np.int32)
+            features['landmarks'] = landmarks.tolist()
+        
+        return features
     
     def _enhance_with_metadata(self, base_prediction: Dict, metadata: Dict, metadata_features: np.ndarray) -> Dict:
         """Verbessert Vorhersagen mit Metadaten-Kontext"""

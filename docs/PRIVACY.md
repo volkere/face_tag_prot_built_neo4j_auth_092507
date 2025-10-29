@@ -1,5 +1,5 @@
 
-# Datenschutz & Verantwortung
+ Datenschutz & Verantwortung
 
 - Prüfe Bildrechte und informiere Betroffene, falls rechtlich erforderlich.
 - Age/Gender sind Schätzwerte und können verzerrt sein (Bias).

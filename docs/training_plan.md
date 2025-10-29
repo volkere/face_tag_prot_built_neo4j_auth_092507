@@ -1,8 +1,8 @@
-# Trainingsplan: Metadaten-basierte KI-Optimierung
+ Trainingsplan: Metadaten-basierte KI-Optimierung
 
-## **Phase 1: Datensammlung und Vorbereitung (2-3 Wochen)**
+ Phase 1: Datensammlung und Vorbereitung (2-3 Wochen)
 
-### 1.1 Datensatz-Struktur
+ 1.1 Datensatz-Struktur
 ```json
 {
   "image_id": "unique_id",
@@ -46,22 +46,22 @@
 }
 ```
 
-### 1.2 Datensatz-Größe
-- **Minimum**: 10.000 Bilder mit Metadaten
-- **Optimal**: 50.000+ Bilder
-- **Verteilung**: Ausgewogen nach Geschlecht, Alter, Standort
+ 1.2 Datensatz-Größe
+- Minimum: 10.000 Bilder mit Metadaten
+- Optimal: 50.000+ Bilder
+- Verteilung: Ausgewogen nach Geschlecht, Alter, Standort
 
-### 1.3 Datensatz-Quellen
-- **Eigene Fotosammlung** (mit Einverständnis)
-- **Öffentliche Datensätze**: 
+ 1.3 Datensatz-Quellen
+- Eigene Fotosammlung (mit Einverständnis)
+- Öffentliche Datensätze: 
   - UTKFace Dataset (Alter/Geschlecht)
   - IMDB-WIKI Dataset
   - CelebA Dataset
-- **Synthetische Daten**: GAN-generierte Gesichter mit Metadaten
+- Synthetische Daten: GAN-generierte Gesichter mit Metadaten
 
-## **Phase 2: Metadaten-Integration (1-2 Wochen)**
+ Phase 2: Metadaten-Integration (1-2 Wochen)
 
-### 2.1 Erweiterte FaceEngine-Klasse
+ 2.1 Erweiterte FaceEngine-Klasse
 ```python
 class EnhancedFaceEngine:
     def __init__(self, metadata_weights=None):
@@ -81,10 +81,10 @@ class EnhancedFaceEngine:
         enhanced_results = []
         
         for face in faces:
-            # Basis-Vorhersage
+             Basis-Vorhersage
             base_prediction = self._extract_face_features(face)
             
-            # Metadaten-Integration
+             Metadaten-Integration
             enhanced_prediction = self._enhance_with_metadata(
                 base_prediction, metadata
             )
@@ -94,36 +94,36 @@ class EnhancedFaceEngine:
         return enhanced_results
 ```
 
-### 2.2 Metadaten-Enhancement-Algorithmus
+ 2.2 Metadaten-Enhancement-Algorithmus
 ```python
 def _enhance_with_metadata(self, base_prediction, metadata):
     """Verbessert Vorhersagen mit Metadaten-Kontext"""
     
-    # Alters-Korrektur basierend auf Standort
+     Alters-Korrektur basierend auf Standort
     if metadata.get('location'):
         location_age_bias = self._get_location_age_bias(metadata['location'])
         base_prediction['age'] = self._adjust_age(
             base_prediction['age'], location_age_bias
         )
     
-    # Geschlechts-Korrektur basierend auf Tageszeit
+     Geschlechts-Korrektur basierend auf Tageszeit
     if metadata.get('temporal'):
         time_gender_bias = self._get_time_gender_bias(metadata['temporal'])
         base_prediction['gender'] = self._adjust_gender_confidence(
             base_prediction['gender'], time_gender_bias
         )
     
-    # Qualitäts-Bewertung basierend auf technischen Metadaten
+     Qualitäts-Bewertung basierend auf technischen Metadaten
     if metadata.get('technical'):
         quality_adjustment = self._get_quality_adjustment(metadata['technical'])
-        base_prediction['confidence'] *= quality_adjustment
+        base_prediction['confidence'] = quality_adjustment
     
     return base_prediction
 ```
 
-## **Phase 3: Training und Validierung (3-4 Wochen)**
+ Phase 3: Training und Validierung (3-4 Wochen)
 
-### 3.1 Trainings-Pipeline
+ 3.1 Trainings-Pipeline
 ```python
 class MetadataAwareTrainer:
     def __init__(self, model_path=None):
@@ -137,16 +137,16 @@ class MetadataAwareTrainer:
             for batch in training_data:
                 images, metadata, labels = batch
                 
-                # Metadaten-Encoding
+                 Metadaten-Encoding
                 metadata_features = self.metadata_encoder(metadata)
                 
-                # Kombinierte Vorhersage
+                 Kombinierte Vorhersage
                 predictions = self.model(images, metadata_features)
                 
-                # Loss-Berechnung
+                 Loss-Berechnung
                 loss = self._calculate_enhanced_loss(predictions, labels, metadata)
                 
-                # Backpropagation
+                 Backpropagation
                 loss.backward()
                 self.optimizer.step()
     
@@ -154,20 +154,20 @@ class MetadataAwareTrainer:
         """Verstärkter Loss mit Metadaten-Kontext"""
         base_loss = self.criterion(predictions, labels)
         
-        # Metadaten-Konsistenz-Loss
+         Metadaten-Konsistenz-Loss
         metadata_consistency_loss = self._metadata_consistency_loss(
             predictions, metadata
         )
         
-        # Temporale Konsistenz-Loss
+         Temporale Konsistenz-Loss
         temporal_consistency_loss = self._temporal_consistency_loss(
             predictions, metadata
         )
         
-        return base_loss + 0.3 * metadata_consistency_loss + 0.2 * temporal_consistency_loss
+        return base_loss + 0.3  metadata_consistency_loss + 0.2  temporal_consistency_loss
 ```
 
-### 3.2 Validierungs-Metriken
+ 3.2 Validierungs-Metriken
 ```python
 def evaluate_metadata_aware_model(self, test_data):
     """Erweiterte Evaluierung mit Metadaten"""
@@ -185,10 +185,10 @@ def evaluate_metadata_aware_model(self, test_data):
         images, metadata, labels = batch
         predictions = self.model(images, metadata)
         
-        # Standard-Metriken
+         Standard-Metriken
         metrics['overall_accuracy'] += accuracy_score(labels, predictions)
         
-        # Metadaten-spezifische Metriken
+         Metadaten-spezifische Metriken
         for location in set(metadata['location']):
             if location not in metrics['location_specific']:
                 metrics['location_specific'][location] = []
@@ -199,30 +199,30 @@ def evaluate_metadata_aware_model(self, test_data):
     return metrics
 ```
 
-## **Phase 4: Integration in die App (1-2 Wochen)**
+ Phase 4: Integration in die App (1-2 Wochen)
 
-### 4.1 Erweiterte Annotate-Seite
+ 4.1 Erweiterte Annotate-Seite
 ```python
 def enhanced_annotation_pipeline(image, metadata):
     """Erweiterte Annotations-Pipeline mit Metadaten"""
     
-    # Metadaten-Extraktion
+     Metadaten-Extraktion
     extracted_metadata = extract_comprehensive_metadata(image)
     
-    # Metadaten-Fusion
+     Metadaten-Fusion
     fused_metadata = fuse_metadata(extracted_metadata, metadata)
     
-    # KI-Vorhersage mit Metadaten
+     KI-Vorhersage mit Metadaten
     enhanced_engine = EnhancedFaceEngine()
     predictions = enhanced_engine.predict_with_metadata(image, fused_metadata)
     
-    # Metadaten-basierte Post-Processing
+     Metadaten-basierte Post-Processing
     refined_predictions = post_process_with_metadata(predictions, fused_metadata)
     
     return refined_predictions, fused_metadata
 ```
 
-### 4.2 Metadaten-basierte Filter
+ 4.2 Metadaten-basierte Filter
 ```python
 class MetadataFilter:
     def __init__(self):
@@ -246,13 +246,13 @@ class MetadataFilter:
     
     def filter_by_location(self, predictions, target_location, radius_km=10):
         """Filtert basierend auf Standort"""
-        # Implementierung der Standort-Filterung
+         Implementierung der Standort-Filterung
         pass
 ```
 
-## **Phase 5: Kontinuierliches Lernen (Ongoing)**
+ Phase 5: Kontinuierliches Lernen (Ongoing)
 
-### 5.1 Feedback-Loop
+ 5.1 Feedback-Loop
 ```python
 class ContinuousLearning:
     def __init__(self):
@@ -274,50 +274,50 @@ class ContinuousLearning:
     def update_model(self, batch_size=100):
         """Aktualisiert das Modell basierend auf Feedback"""
         if len(self.feedback_database) >= batch_size:
-            # Batch-Learning mit Feedback-Daten
+             Batch-Learning mit Feedback-Daten
             self._train_on_feedback()
-            self.feedback_database = []  # Reset nach Training
+            self.feedback_database = []   Reset nach Training
 ```
 
-### 5.2 A/B-Testing
+ 5.2 A/B-Testing
 ```python
 def ab_test_metadata_integration(user_group, test_images):
     """A/B-Test für Metadaten-Integration"""
     
     if user_group == 'A':
-        # Kontrollgruppe: Standard-Modell
+         Kontrollgruppe: Standard-Modell
         predictions = standard_face_engine.analyze(test_images)
     else:
-        # Testgruppe: Metadaten-verstärktes Modell
+         Testgruppe: Metadaten-verstärktes Modell
         predictions = enhanced_face_engine.predict_with_metadata(test_images, metadata)
     
-    # Erfolgsmetriken sammeln
+     Erfolgsmetriken sammeln
     success_metrics = collect_success_metrics(predictions, user_feedback)
     
     return success_metrics
 ```
 
-## **Implementierungs-Timeline**
+ Implementierungs-Timeline
 
 | Phase | Dauer | Hauptziele |
 |-------|-------|------------|
-| **Phase 1** | 2-3 Wochen | Datensammlung, Strukturierung |
-| **Phase 2** | 1-2 Wochen | Metadaten-Integration |
-| **Phase 3** | 3-4 Wochen | Training, Validierung |
-| **Phase 4** | 1-2 Wochen | App-Integration |
-| **Phase 5** | Ongoing | Kontinuierliches Lernen |
+| Phase 1 | 2-3 Wochen | Datensammlung, Strukturierung |
+| Phase 2 | 1-2 Wochen | Metadaten-Integration |
+| Phase 3 | 3-4 Wochen | Training, Validierung |
+| Phase 4 | 1-2 Wochen | App-Integration |
+| Phase 5 | Ongoing | Kontinuierliches Lernen |
 
-## **Erwartete Verbesserungen**
+ Erwartete Verbesserungen
 
-- **Alterserkennung**: +15-25% Genauigkeit
-- **Geschlechtserkennung**: +10-20% Genauigkeit  
-- **Standort-basierte Vorhersagen**: +20-30% Genauigkeit
-- **Temporale Konsistenz**: +25-35% Verbesserung
-- **Gesamtqualität**: +15-25% Verbesserung
+- Alterserkennung: +15-25% Genauigkeit
+- Geschlechtserkennung: +10-20% Genauigkeit  
+- Standort-basierte Vorhersagen: +20-30% Genauigkeit
+- Temporale Konsistenz: +25-35% Verbesserung
+- Gesamtqualität: +15-25% Verbesserung
 
-## **Ressourcen-Anforderungen**
+ Ressourcen-Anforderungen
 
-- **GPU**: NVIDIA RTX 3080 oder besser
-- **RAM**: 32GB+
-- **Storage**: 500GB+ für Datensätze
-- **Zeit**: 8-12 Wochen für vollständige Implementierung
+- GPU: NVIDIA RTX 3080 oder besser
+- RAM: 32GB+
+- Storage: 500GB+ für Datensätze
+- Zeit: 8-12 Wochen für vollständige Implementierung

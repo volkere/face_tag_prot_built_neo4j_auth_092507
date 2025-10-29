@@ -5,9 +5,12 @@ import streamlit as st
 import numpy as np
 from PIL import Image
 import cv2
+import pandas as pd
 
 from app.face_recognizer import FaceEngine, GalleryDB
 from app.location import extract_exif_gps, reverse_geocode, extract_comprehensive_metadata, get_location_details
+
+# Neue Annotation-Features - verwende eingebaute Streamlit-Funktionen
 
 # Versuche Enhanced Face Engine zu importieren
 try:
@@ -67,6 +70,17 @@ with st.sidebar:
     st.subheader("Dateien")
     gallery_file = st.file_uploader("Embeddings DB (embeddings.pkl)", type=["pkl"], key="db_upload")
     files = st.file_uploader("Bilder hochladen", type=["jpg","jpeg","png","bmp","webp","tif","tiff"], accept_multiple_files=True)
+    
+    # Neue Annotation-Features Info
+    st.divider()
+    st.subheader("Neue Features")
+    st.info("""
+    **Interaktive Annotation-Bearbeitung**: 
+    Nach der Verarbeitung können Sie alle Annotationen direkt in der Tabelle bearbeiten!
+    
+    **Farbige Metadaten**: 
+    Metadaten werden jetzt mit farbigen Hervorhebungen angezeigt.
+    """)
 
 if "engine_annot" not in st.session_state or st.session_state.get("det_annot_state") != det:
     st.session_state["engine_annot"] = FaceEngine(det_size=(det, det))
@@ -360,6 +374,175 @@ def display_face_analysis(persons):
                             st.write(f"Pitch: {pose.get('pitch', 0):.1f}°")
                             st.write(f"Roll: {pose.get('roll', 0):.1f}°")
 
+def display_metadata_annotated(metadata):
+    """Zeigt Metadaten mit farbigen Hervorhebungen an"""
+    if not metadata:
+        return
+    
+    # Kamera-Informationen
+    if metadata.get('camera_make') or metadata.get('camera_model'):
+        camera_text = ""
+        if metadata.get('camera_make'):
+            camera_text += f"**Hersteller:** :red[{metadata['camera_make']}]"
+        if metadata.get('camera_model'):
+            if camera_text:
+                camera_text += " | "
+            camera_text += f"**Modell:** :blue[{metadata['camera_model']}]"
+        
+        if camera_text:
+            st.markdown(camera_text)
+    
+    # Aufnahme-Einstellungen
+    if any(key in metadata for key in ['focal_length', 'f_number', 'iso', 'exposure_time']):
+        settings_text = ""
+        if metadata.get('focal_length'):
+            settings_text += f"**Brennweite:** :green[{metadata['focal_length']}mm]"
+        if metadata.get('f_number'):
+            if settings_text:
+                settings_text += " | "
+            settings_text += f"**Blende:** :orange[f/{metadata['f_number']}]"
+        if metadata.get('iso'):
+            if settings_text:
+                settings_text += " | "
+            settings_text += f"**ISO:** :violet[{metadata['iso']}]"
+        if metadata.get('exposure_time'):
+            if settings_text:
+                settings_text += " | "
+            settings_text += f"**Belichtung:** :red[1/{metadata['exposure_time']}s]"
+        
+        if settings_text:
+            st.markdown(settings_text)
+    
+    # Standort
+    if metadata.get('gps'):
+        gps = metadata['gps']
+        location_text = f"**Standort:** :red[{gps['lat']:.4f}°N] :blue[{gps['lon']:.4f}°E]"
+        if gps.get('altitude'):
+            location_text += f" | **Höhe:** :green[{gps['altitude']:.1f}m]"
+        st.markdown(location_text)
+
+def interactive_annotation_editor(results: List[Dict]) -> List[Dict]:
+    """Interaktive Annotation-Bearbeitung mit st.data_editor"""
+    if not results:
+        return results
+    
+    st.subheader("Interaktive Annotation-Bearbeitung")
+    st.info("Bearbeiten Sie die Annotationen direkt in der Tabelle!")
+    
+    # Erstelle DataFrame mit allen Gesichtern
+    faces_data = []
+    for idx, result in enumerate(results):
+        for person_idx, person in enumerate(result.get('persons', [])):
+            faces_data.append({
+                "Bild": result['image'],
+                "Person ID": f"P{person_idx+1}",
+                "Name": person.get('name', '') or '',
+                "Alter": person.get('age') or '',
+                "Geschlecht": person.get('gender', '') or '',
+                "Qualität": round(person.get('quality_score', 0.0), 2) if person.get('quality_score') else 0.0,
+                "Emotion": person.get('emotion', '') or '',
+                "Ähnlichkeit": round(person.get('similarity', 0.0), 2) if person.get('similarity') else 0.0,
+                "Notizen": '',  # Für Benutzer-Annotationen
+                "Bild-Index": idx,
+                "Person-Index": person_idx
+            })
+    
+    if not faces_data:
+        st.warning("Keine Gesichter zum Bearbeiten gefunden")
+        return results
+    
+    df = pd.DataFrame(faces_data)
+    
+    # Interaktive Bearbeitung
+    edited_df = st.data_editor(
+        df,
+        num_rows="dynamic",
+        column_config={
+            "Bild": st.column_config.TextColumn(
+                "Bild-Name",
+                help="Name des Bildes",
+                width="medium"
+            ),
+            "Person ID": st.column_config.TextColumn(
+                "Person ID",
+                width="small"
+            ),
+            "Name": st.column_config.TextColumn(
+                "Erkannte Person",
+                help="Name der erkannten Person (bearbeitbar)",
+                width="medium"
+            ),
+            "Alter": st.column_config.NumberColumn(
+                "Alter",
+                min_value=0,
+                max_value=150,
+                step=1,
+                help="Geschätztes Alter"
+            ),
+            "Geschlecht": st.column_config.SelectboxColumn(
+                "Geschlecht",
+                options=["", "male", "female", "unknown"],
+                help="Geschlecht"
+            ),
+            "Qualität": st.column_config.NumberColumn(
+                "Qualität (0-1)",
+                min_value=0.0,
+                max_value=1.0,
+                step=0.01,
+                format="%.2f",
+                help="Gesichtsqualität (0-1)"
+            ),
+            "Emotion": st.column_config.SelectboxColumn(
+                "Emotion",
+                options=["", "happy", "neutral", "sad", "angry", "surprised", "unknown"],
+                help="Erkannte Emotion"
+            ),
+            "Ähnlichkeit": st.column_config.NumberColumn(
+                "Ähnlichkeit",
+                min_value=0.0,
+                max_value=1.0,
+                step=0.01,
+                format="%.2f",
+                help="Ähnlichkeit zur erkannten Person"
+            ),
+            "Notizen": st.column_config.TextColumn(
+                "Benutzer-Notizen",
+                help="Fügen Sie eigene Notizen hinzu",
+                width="large"
+            )
+        },
+        use_container_width=True,
+        hide_index=True
+    )
+    
+    # Aktualisiere results mit bearbeiteten Daten
+    updated_results = results.copy()
+    for _, row in edited_df.iterrows():
+        img_idx = int(row['Bild-Index'])
+        person_idx = int(row['Person-Index'])
+        
+        if img_idx < len(updated_results) and person_idx < len(updated_results[img_idx].get('persons', [])):
+            person = updated_results[img_idx]['persons'][person_idx]
+            
+            # Aktualisiere Werte
+            if pd.notna(row['Name']) and row['Name']:
+                person['name'] = row['Name']
+            if pd.notna(row['Alter']):
+                person['age'] = int(row['Alter'])
+            if pd.notna(row['Geschlecht']) and row['Geschlecht']:
+                person['gender'] = row['Geschlecht']
+            if pd.notna(row['Qualität']):
+                person['quality_score'] = float(row['Qualität'])
+            if pd.notna(row['Emotion']) and row['Emotion']:
+                person['emotion'] = row['Emotion']
+            if pd.notna(row['Ähnlichkeit']):
+                person['similarity'] = float(row['Ähnlichkeit'])
+            if pd.notna(row['Notizen']) and row['Notizen']:
+                person['user_notes'] = row['Notizen']
+    
+    st.success(f"✅ {len(edited_df)} Annotationen bearbeitet!")
+    return updated_results
+
 results: List[Dict[str, Any]] = []
 
 # Status-Anzeige für Enhanced Model
@@ -481,6 +664,10 @@ if files:
         # Metadaten anzeigen
         display_metadata_card(metadata, "Bild-Metadaten")
         
+        # Metadaten mit farbigen Hervorhebungen anzeigen (neue Funktion)
+        with st.expander("Metadaten (Farbig)", expanded=False):
+            display_metadata_annotated(metadata)
+        
         # Standort anzeigen
         if location_info:
             with st.expander("Standort-Informationen", expanded=False):
@@ -512,6 +699,12 @@ if files:
         progress_bar.progress((idx + 1) / len(files))
     
     status_text.text("Verarbeitung abgeschlossen!")
+    
+    # Interaktive Annotation-Bearbeitung (neue Funktion)
+    if len(results) > 0:
+        st.divider()
+        results = interactive_annotation_editor(results)
+        st.divider()
     
     # Statistiken berechnen
     total_faces = sum(len(r['persons']) for r in results)

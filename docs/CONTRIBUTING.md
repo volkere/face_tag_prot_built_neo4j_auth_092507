@@ -1,5 +1,5 @@
 
-# Contributing
+ Contributing
 
 1. Fork & Branch: `feature/your-topic`
 2. Install dev deps and run lint:

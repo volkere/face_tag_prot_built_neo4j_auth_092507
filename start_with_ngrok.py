@@ -35,16 +35,16 @@ def start_ngrok():
         if data['tunnels']:
             public_url = data['tunnels'][0]['public_url']
             print(f"\n{'='*60}")
-            print(f"🌐 ÖFFENTLICHE URL: {public_url}")
+            print(f"ÖFFENTLICHE URL: {public_url}")
             print(f"{'='*60}")
-            print(f"📋 LOGIN-DATEN:")
+            print(f"LOGIN-DATEN:")
             print(f"   Benutzername: admin")
             print(f"   Passwort: admin123")
             print(f"   ODER")
             print(f"   Benutzername: user")
             print(f"   Passwort: user123")
             print(f"{'='*60}")
-            print(f"⚠️  WICHTIG: Diese URL ist temporär und wird beim Beenden des Tunnels ungültig!")
+            print(f"WICHTIG: Diese URL ist temporär und wird beim Beenden des Tunnels ungültig!")
             print(f"{'='*60}\n")
         else:
             print("Fehler: Keine ngrok-URL gefunden")

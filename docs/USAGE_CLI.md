@@ -1,5 +1,5 @@
 
-# Nutzung: CLI
+ Nutzung: CLI
 
 Embeddings bauen:
 ```bash
