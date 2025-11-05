@@ -13,6 +13,15 @@ import plotly.express as px
 import plotly.graph_objects as go
 from typing import List, Dict, Any, Tuple
 import io
+import sys
+
+# Füge app-Verzeichnis zum Python-Pfad hinzu
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
+
+from streamlit_styles import apply_custom_css
+
+# Wende kleinere Schriftgrößen an
+apply_custom_css()
 import cv2
 import numpy as np
 from PIL import Image

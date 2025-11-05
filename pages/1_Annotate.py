@@ -6,9 +6,18 @@ import numpy as np
 from PIL import Image
 import cv2
 import pandas as pd
+import sys
+import os
+
+# Füge app-Verzeichnis zum Python-Pfad hinzu
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 
 from app.face_recognizer import FaceEngine, GalleryDB
 from app.location import extract_exif_gps, reverse_geocode, extract_comprehensive_metadata, get_location_details
+from streamlit_styles import apply_custom_css
+
+# Wende kleinere Schriftgrößen an
+apply_custom_css()
 
 # Neue Annotation-Features - verwende eingebaute Streamlit-Funktionen
 

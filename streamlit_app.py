@@ -2,9 +2,19 @@
 import streamlit as st
 import hashlib
 import time
+import sys
+import os
+
+# Füge app-Verzeichnis zum Python-Pfad hinzu
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'app'))
+
+from streamlit_styles import apply_custom_css
 
 # Seite konfigurieren
 st.set_page_config(page_title="Photo Metadata Suite", layout="wide")
+
+# Wende kleinere Schriftgrößen an
+apply_custom_css()
 
 # Einfache Authentifizierung
 def check_password():

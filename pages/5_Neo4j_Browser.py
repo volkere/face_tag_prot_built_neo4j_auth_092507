@@ -11,8 +11,17 @@ import plotly.express as px
 from typing import Dict, List, Any
 import networkx as nx
 import logging
+import sys
+import os
+
+# Füge app-Verzeichnis zum Python-Pfad hinzu
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 
 from app.neo4j_connector import Neo4jManager
+from streamlit_styles import apply_custom_css
+
+# Wende kleinere Schriftgrößen an
+apply_custom_css()
 
 # Aktiviere Debug-Logging
 logging.basicConfig(level=logging.DEBUG)

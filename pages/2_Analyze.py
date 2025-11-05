@@ -6,6 +6,11 @@ import plotly.graph_objects as go
 from datetime import datetime, timedelta
 import numpy as np
 from typing import Dict, List, Any
+import sys
+import os
+
+# Füge app-Verzeichnis zum Python-Pfad hinzu
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
 
 from app.utils import (
     group_images_by_location, 
@@ -13,6 +18,10 @@ from app.utils import (
     parse_datetime_string,
     calculate_distance_between_points
 )
+from streamlit_styles import apply_custom_css
+
+# Wende kleinere Schriftgrößen an
+apply_custom_css()
 
 st.title("Erweiterte Metadaten-Analyse")
 st.caption("Analysieren Sie Ihre Foto-Metadaten mit Statistiken und Visualisierungen")
