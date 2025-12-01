@@ -482,3 +482,6 @@ tcpdump -i lo0 -A -s 0 'port 8000'
 
 **Diese Integration ermöglicht es, die reichhaltigen Metadaten aus PBF-DAMS in der Streamlit App zu nutzen und für Analysen, Forschung und Qualitätskontrolle zu exportieren! 🎯**
 
+
+
+

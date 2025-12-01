@@ -64,8 +64,6 @@ Wähle links eine Seite:
 - **Annotate**: Fotos mit erweiterten Metadaten analysieren  
 - **Analyze**: Erweiterte Statistiken und Visualisierungen
 - **Train**: KI-Training mit Metadaten für bessere Genauigkeit
-- **Neo4j**: Datenbank-Integration für komplexe Abfragen
-- **Neo4j Browser**: Interaktive Graph-Visualisierung
 
 ### Neue Features:
 
@@ -80,13 +78,7 @@ Wähle links eine Seite:
 - Augen- und Mundstatus-Erkennung
 - Pose-Schätzung und Symmetrie-Analyse
 
-**Neo4j Datenbank-Integration:**
-- Import von JSON-Daten in Neo4j-Graphdatenbank
-- Komplexe Abfragen nach Personen, Emotionen, Standorten
-- Interaktive Statistiken und Visualisierungen
-- Graph-basierte Beziehungsanalyse
-
-**Neo4j Browser:**
+**Datenexport:**
 - Interaktive Graph-Visualisierung mit Plotly
 - Cypher-Query-Interface mit Beispiel-Abfragen
 - Verschiedene Layout-Typen (Spring, Circular, Hierarchical)

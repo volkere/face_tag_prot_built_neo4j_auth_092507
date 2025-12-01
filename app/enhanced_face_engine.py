@@ -9,9 +9,9 @@ from typing import Dict, List, Optional, Any, Tuple
 import numpy as np
 import cv2
 from datetime import datetime, timedelta
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import accuracy_score, classification_report
+from sklearn.metrics import accuracy_score, classification_report, mean_squared_error, r2_score
 import joblib
 
 from insightface.app import FaceAnalysis
@@ -31,16 +31,27 @@ class MetadataEncoder:
         features = []
         
         # Alter (normalisiert)
-        age = metadata.get('age', 30)
-        features.append(min(age / 100.0, 1.0))  # Normalisiert auf 0-1
+        age = metadata.get('age') or 30
+        try:
+            age = float(age)
+            features.append(min(age / 100.0, 1.0))  # Normalisiert auf 0-1
+        except (ValueError, TypeError):
+            features.append(0.3)  # Standard 30 / 100
+            age = 30  # Für Altersgruppe-Berechnung
         
         # Geschlecht (one-hot encoding)
-        gender = metadata.get('gender', 'unknown')
+        gender = metadata.get('gender') or 'unknown'
+        if not isinstance(gender, str):
+            gender = 'unknown'
         gender_map = {'male': [1, 0], 'female': [0, 1], 'unknown': [0, 0]}
         features.extend(gender_map.get(gender, [0, 0]))
         
         # Altersgruppe
-        age_group = self._get_age_group(age)
+        try:
+            age_int = int(age)
+            age_group = self._get_age_group(age_int)
+        except (ValueError, TypeError):
+            age_group = 'adult'
         age_groups = ['child', 'teen', 'young_adult', 'adult', 'senior']
         age_group_encoding = [1 if age_group == group else 0 for group in age_groups]
         features.extend(age_group_encoding)
@@ -52,17 +63,31 @@ class MetadataEncoder:
         features = []
         
         # GPS-Koordinaten (normalisiert)
-        gps = metadata.get('gps', {})
-        lat = gps.get('lat', 0)
-        lon = gps.get('lon', 0)
-        features.extend([lat / 90.0, lon / 180.0])  # Normalisiert
+        gps = metadata.get('gps') or {}
+        if not isinstance(gps, dict):
+            gps = {}
+        lat = gps.get('lat', 0) or 0
+        lon = gps.get('lon', 0) or 0
+        try:
+            lat = float(lat)
+            lon = float(lon)
+            features.extend([lat / 90.0, lon / 180.0])  # Normalisiert
+        except (ValueError, TypeError):
+            features.extend([0.0, 0.0])
         
         # Höhe (normalisiert)
-        altitude = gps.get('altitude', 0)
-        features.append(min(altitude / 8848.0, 1.0))  # Normalisiert auf Mount Everest
+        altitude = gps.get('altitude', 0) or 0
+        try:
+            altitude = float(altitude)
+            features.append(min(altitude / 8848.0, 1.0))  # Normalisiert auf Mount Everest
+        except (ValueError, TypeError):
+            features.append(0.0)
         
         # Land/Region (einfache Kodierung)
-        country = metadata.get('location', {}).get('country', 'unknown')
+        location = metadata.get('location') or {}
+        if not isinstance(location, dict):
+            location = {}
+        country = location.get('country', 'unknown') or 'unknown'
         # Vereinfachte Länder-Kodierung (Top 10 Länder)
         top_countries = ['Germany', 'USA', 'China', 'Japan', 'UK', 'France', 'Italy', 'Spain', 'Canada', 'Australia']
         country_encoding = [1 if country == c else 0 for c in top_countries]
@@ -110,26 +135,44 @@ class MetadataEncoder:
         features = []
         
         # Bildqualität
-        quality = metadata.get('image_quality', 0.5)
-        features.append(quality)
+        quality = metadata.get('image_quality') or 0.5
+        try:
+            quality = float(quality)
+            features.append(min(max(quality, 0.0), 1.0))
+        except (ValueError, TypeError):
+            features.append(0.5)
         
         # Kamera-Modell (vereinfachte Kodierung)
-        camera_model = metadata.get('camera_model', 'unknown')
+        camera_model = metadata.get('camera_model') or 'unknown'
+        if not isinstance(camera_model, str):
+            camera_model = 'unknown'
         top_cameras = ['iPhone', 'Canon', 'Sony', 'Nikon', 'Samsung', 'Huawei', 'Google', 'Xiaomi']
         camera_encoding = [1 if any(cam in camera_model for cam in [c]) else 0 for c in top_cameras]
         features.extend(camera_encoding)
         
         # Brennweite (normalisiert)
-        focal_length = metadata.get('focal_length', 50)
-        features.append(min(focal_length / 200.0, 1.0))
+        focal_length = metadata.get('focal_length') or 50
+        try:
+            focal_length = float(focal_length)
+            features.append(min(focal_length / 200.0, 1.0))
+        except (ValueError, TypeError):
+            features.append(0.25)  # Standard 50mm / 200
         
         # ISO (normalisiert)
-        iso = metadata.get('iso', 100)
-        features.append(min(iso / 6400.0, 1.0))
+        iso = metadata.get('iso') or 100
+        try:
+            iso = float(iso)
+            features.append(min(iso / 6400.0, 1.0))
+        except (ValueError, TypeError):
+            features.append(0.015625)  # Standard 100 / 6400
         
         # Blende (normalisiert)
-        f_number = metadata.get('f_number', 2.8)
-        features.append(min(f_number / 22.0, 1.0))
+        f_number = metadata.get('f_number') or 2.8
+        try:
+            f_number = float(f_number)
+            features.append(min(f_number / 22.0, 1.0))
+        except (ValueError, TypeError):
+            features.append(0.127)  # Standard 2.8 / 22
         
         return np.array(features)
     
@@ -200,55 +243,83 @@ class EnhancedFaceEngine:
         print("Starte Training mit Metadaten-Integration...")
         
         # Daten vorbereiten
-        X_metadata = []
+        X_age_metadata = []
         y_age = []
+        X_gender_metadata = []
         y_gender = []
+        X_quality_metadata = []
         y_quality = []
         
         for item in training_data:
-            # Metadaten extrahieren
+            # Metadaten extrahieren (einmal pro Item)
             metadata = item.get('metadata', {})
             metadata_features = self.metadata_encoder.encode_all_metadata(metadata)
-            X_metadata.append(metadata_features)
             
-            # Labels extrahieren
+            # Labels extrahieren (für jede Person im Item)
             persons = item.get('persons', [])
             for person in persons:
-                if person.get('age'):
-                    y_age.append(person['age'])
-                if person.get('gender'):
-                    y_gender.append(person['gender'])
-                if person.get('quality_score'):
-                    y_quality.append(person['quality_score'])
-        
-        X_metadata = np.array(X_metadata)
+                # Alter: Für jede Person mit Alter-Daten
+                if person.get('age') is not None:
+                    try:
+                        age = float(person['age'])
+                        X_age_metadata.append(metadata_features)
+                        y_age.append(age)
+                    except (ValueError, TypeError):
+                        pass
+                
+                # Geschlecht: Für jede Person mit Geschlechts-Daten
+                if person.get('gender') is not None:
+                    gender = person['gender']
+                    if isinstance(gender, str) and gender.strip():
+                        X_gender_metadata.append(metadata_features)
+                        y_gender.append(gender)
+                
+                # Qualität: Für jede Person mit Qualitäts-Daten
+                if person.get('quality_score') is not None:
+                    try:
+                        quality = float(person['quality_score'])
+                        X_quality_metadata.append(metadata_features)
+                        y_quality.append(quality)
+                    except (ValueError, TypeError):
+                        pass
         
         # Modelle trainieren
         results = {}
         
-        # Alters-Modell
+        # Alters-Modell (Regression, da Alter kontinuierlich ist)
         if len(y_age) > 10:
-            self.age_model = RandomForestClassifier(n_estimators=100, random_state=42)
-            self.age_model.fit(X_metadata, y_age)
-            age_pred = self.age_model.predict(X_metadata)
-            results['age_accuracy'] = accuracy_score(y_age, age_pred)
-            print(f"Alters-Modell trainiert - Genauigkeit: {results['age_accuracy']:.3f}")
+            X_age_metadata = np.array(X_age_metadata)
+            self.age_model = RandomForestRegressor(n_estimators=100, random_state=42)
+            self.age_model.fit(X_age_metadata, y_age)
+            age_pred = self.age_model.predict(X_age_metadata)
+            age_mse = mean_squared_error(y_age, age_pred)
+            age_r2 = r2_score(y_age, age_pred)
+            results['age_mse'] = age_mse
+            results['age_r2'] = age_r2
+            results['age_accuracy'] = age_r2  # R² als "Genauigkeit" für Rückwärtskompatibilität
+            print(f"Alters-Modell trainiert - R²: {age_r2:.3f}, MSE: {age_mse:.3f} ({len(y_age)} Samples)")
         
-        # Geschlechts-Modell
+        # Geschlechts-Modell (Klassifikation, da Geschlecht diskret ist)
         if len(y_gender) > 10:
+            X_gender_metadata = np.array(X_gender_metadata)
             self.gender_model = RandomForestClassifier(n_estimators=100, random_state=42)
-            self.gender_model.fit(X_metadata, y_gender)
-            gender_pred = self.gender_model.predict(X_metadata)
+            self.gender_model.fit(X_gender_metadata, y_gender)
+            gender_pred = self.gender_model.predict(X_gender_metadata)
             results['gender_accuracy'] = accuracy_score(y_gender, gender_pred)
-            print(f"Geschlechts-Modell trainiert - Genauigkeit: {results['gender_accuracy']:.3f}")
+            print(f"Geschlechts-Modell trainiert - Genauigkeit: {results['gender_accuracy']:.3f} ({len(y_gender)} Samples)")
         
-        # Qualitäts-Modell
+        # Qualitäts-Modell (Regression, da Qualität kontinuierlich ist)
         if len(y_quality) > 10:
-            self.quality_model = RandomForestClassifier(n_estimators=100, random_state=42)
-            self.quality_model.fit(X_metadata, y_quality)
-            quality_pred = self.quality_model.predict(X_metadata)
-            results['quality_accuracy'] = accuracy_score(y_quality, quality_pred)
-            print(f"Qualitäts-Modell trainiert - Genauigkeit: {results['quality_accuracy']:.3f}")
+            X_quality_metadata = np.array(X_quality_metadata)
+            self.quality_model = RandomForestRegressor(n_estimators=100, random_state=42)
+            self.quality_model.fit(X_quality_metadata, y_quality)
+            quality_pred = self.quality_model.predict(X_quality_metadata)
+            quality_mse = mean_squared_error(y_quality, quality_pred)
+            quality_r2 = r2_score(y_quality, quality_pred)
+            results['quality_mse'] = quality_mse
+            results['quality_r2'] = quality_r2
+            results['quality_accuracy'] = quality_r2  # R² als "Genauigkeit" für Rückwärtskompatibilität
+            print(f"Qualitäts-Modell trainiert - R²: {quality_r2:.3f}, MSE: {quality_mse:.3f} ({len(y_quality)} Samples)")
         
         # Metadaten-Bias berechnen
         self._calculate_metadata_bias(training_data)
@@ -359,14 +430,18 @@ class EnhancedFaceEngine:
         """Verbessert Vorhersagen mit Metadaten-Kontext"""
         enhanced = base_prediction.copy()
         
-        # Alters-Korrektur basierend auf trainierten Modellen
+        # Alters-Korrektur basierend auf trainierten Modellen (Regression)
         if self.age_model is not None:
-            predicted_age = self.age_model.predict([metadata_features])[0]
+            predicted_age = float(self.age_model.predict([metadata_features])[0])
             if enhanced['age'] is not None:
-                # Gewichtete Kombination
-                enhanced['age'] = int(0.7 * enhanced['age'] + 0.3 * predicted_age)
+                try:
+                    current_age = float(enhanced['age'])
+                    # Gewichtete Kombination
+                    enhanced['age'] = int(0.7 * current_age + 0.3 * predicted_age)
+                except (ValueError, TypeError):
+                    enhanced['age'] = int(predicted_age)
             else:
-                enhanced['age'] = predicted_age
+                enhanced['age'] = int(predicted_age)
         
         # Geschlechts-Korrektur
         if self.gender_model is not None:
@@ -398,10 +473,11 @@ class EnhancedFaceEngine:
                     elif time_bias < 0.4 and enhanced['gender'] == 'female':
                         enhanced['gender'] = 'male'
         
-        # Qualitäts-Bewertung basierend auf technischen Metadaten
+        # Qualitäts-Bewertung basierend auf technischen Metadaten (Regression)
         if self.quality_model is not None:
-            predicted_quality = self.quality_model.predict([metadata_features])[0]
-            enhanced['quality_score'] = float(predicted_quality)
+            predicted_quality = float(self.quality_model.predict([metadata_features])[0])
+            # Stelle sicher, dass Qualität zwischen 0 und 1 liegt
+            enhanced['quality_score'] = max(0.0, min(1.0, float(predicted_quality)))
         
         return enhanced
     

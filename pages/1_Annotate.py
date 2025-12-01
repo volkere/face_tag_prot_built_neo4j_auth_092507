@@ -1,6 +1,6 @@
 
 import io, json, tempfile
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import streamlit as st
 import numpy as np
 from PIL import Image
@@ -8,6 +8,8 @@ import cv2
 import pandas as pd
 import sys
 import os
+import pickle
+import joblib
 
 # Füge app-Verzeichnis zum Python-Pfad hinzu
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'app'))
@@ -78,6 +80,12 @@ with st.sidebar:
     # Datei-Upload
     st.subheader("Dateien")
     gallery_file = st.file_uploader("Embeddings DB (embeddings.pkl)", type=["pkl"], key="db_upload")
+    training_identity_file = st.file_uploader(
+        "Trainings-Identitäten (JSON/PKL)",
+        type=["json", "pkl"],
+        key="training_identity_upload",
+        help="Laden Sie hier die Trainingsdaten oder das Modell hoch, das auf der Train-Seite erzeugt wurde."
+    )
     files = st.file_uploader("Bilder hochladen", type=["jpg","jpeg","png","bmp","webp","tif","tiff"], accept_multiple_files=True)
     
     # Neue Annotation-Features Info
@@ -95,20 +103,352 @@ if "engine_annot" not in st.session_state or st.session_state.get("det_annot_sta
     st.session_state["engine_annot"] = FaceEngine(det_size=(det, det))
     st.session_state["det_annot_state"] = det
 
+TRAINING_EMBEDDING_KEYS = ["embedding", "face_embedding", "vector", "face_vector"]
+TRAINING_NAME_KEYS = ["identifier", "person_identifier", "name", "label", "person_label"]
+
+
+def merge_gallery_databases(target: GalleryDB, source: GalleryDB):
+    """Fügt alle Personen aus source in target ein."""
+    for name, embeddings in source.people.items():
+        for emb in embeddings:
+            target.add(name, emb)
+        if name in source.face_metadata:
+            target.face_metadata.setdefault(name, []).extend(source.face_metadata[name])
+
+
+def _extract_person_name(person: Dict[str, Any]) -> Optional[str]:
+    for key in TRAINING_NAME_KEYS:
+        value = person.get(key)
+        if value:
+            return value
+    nested = person.get("person")
+    if isinstance(nested, dict):
+        for key in TRAINING_NAME_KEYS:
+            value = nested.get(key)
+            if value:
+                return value
+    return None
+
+
+def _extract_person_embedding(person: Dict[str, Any]) -> Optional[np.ndarray]:
+    for key in TRAINING_EMBEDDING_KEYS:
+        if key in person and person[key] is not None:
+            try:
+                emb_array = np.array(person[key], dtype=np.float32)
+                if emb_array.ndim == 1:
+                    return emb_array
+            except Exception:
+                continue
+    nested = person.get("person")
+    if isinstance(nested, dict):
+        for key in TRAINING_EMBEDDING_KEYS:
+            if key in nested and nested[key] is not None:
+                try:
+                    emb_array = np.array(nested[key], dtype=np.float32)
+                    if emb_array.ndim == 1:
+                        return emb_array
+                except Exception:
+                    continue
+    return None
+
+
+def build_gallery_from_training_json(data: Any) -> Optional[GalleryDB]:
+    """Baut eine GalleryDB aus den Trainingsdaten (JSON) auf."""
+    if data is None:
+        return None
+    records = []
+    if isinstance(data, list):
+        records = data
+    elif isinstance(data, dict):
+        if "entries" in data and isinstance(data["entries"], list):
+            records = data["entries"]
+        elif "regions" in data and isinstance(data["regions"], list):
+            records = data["regions"]
+        else:
+            records = [data]
+    else:
+        return None
+
+    gallery = GalleryDB()
+    added = 0
+    for record in records:
+        persons = record.get("persons") or record.get("regions") or []
+        if isinstance(persons, dict):
+            persons = [persons]
+        for person in persons:
+            name = _extract_person_name(person)
+            embedding = _extract_person_embedding(person)
+            if name and embedding is not None:
+                gallery.add(name, embedding)
+                added += 1
+    return gallery if added > 0 else None
+
+
+def build_gallery_from_training_pickle(data: Any) -> Optional[GalleryDB]:
+    """Baut eine GalleryDB aus einer Pickle-Datei auf."""
+    if data is None:
+        return None
+
+    gallery = GalleryDB()
+    added = 0
+
+    if isinstance(data, GalleryDB):
+        return data
+
+    if isinstance(data, dict):
+        # Direkte Gallery-Struktur
+        if "people" in data:
+            for name, embeddings in data.get("people", {}).items():
+                for emb in embeddings:
+                    try:
+                        gallery.add(name, np.array(emb, dtype=np.float32))
+                        added += 1
+                    except Exception:
+                        continue
+            if added > 0:
+                if "metadata" in data:
+                    gallery.face_metadata = data.get("metadata", {})
+                return gallery
+
+        # Trainingsdatensatz innerhalb eines Dicts
+        if "training_data" in data and isinstance(data["training_data"], (list, dict)):
+            return build_gallery_from_training_json(data["training_data"])
+
+        # Allgemeine Daten (z.B. Ergebnisse aus convert_to_training_format)
+        gallery_from_json = build_gallery_from_training_json(data)
+        if gallery_from_json:
+            return gallery_from_json
+
+    return gallery if added > 0 else None
+
+
+def load_training_identity_file(uploaded_file) -> Optional[GalleryDB]:
+    """Lädt Trainings-Identitäten aus JSON oder PKL-Dateien."""
+    if uploaded_file is None:
+        return None
+
+    file_ext = os.path.splitext(uploaded_file.name)[1].lower()
+    try:
+        if file_ext == ".json":
+            uploaded_file.seek(0)
+            try:
+                data = json.load(uploaded_file)
+                return build_gallery_from_training_json(data)
+            except json.JSONDecodeError as e:
+                st.error(f"Fehler beim Laden der JSON-Datei: Ungültiges JSON-Format. {e}")
+                return None
+        elif file_ext == ".pkl":
+            uploaded_file.seek(0)
+            raw_bytes = uploaded_file.read()
+            
+            # Prüfe ob Datei leer ist
+            if len(raw_bytes) == 0:
+                st.error("Die PKL-Datei ist leer.")
+                return None
+            
+            # Prüfe ob es ein gültiges Pickle-Format ist
+            try:
+                # Versuche zuerst mit joblib (für scikit-learn Modelle)
+                bio = io.BytesIO(raw_bytes)
+                try:
+                    data = joblib.load(bio)
+                    
+                    # Prüfe ob es ein Enhanced Model ist (enthält trainierte Modelle, keine Embeddings)
+                    if isinstance(data, dict):
+                        # Enhanced Model erkennt man an den Schlüsseln: age_model, gender_model, quality_model
+                        if any(key in data for key in ['age_model', 'gender_model', 'quality_model']):
+                            st.error("❌ Diese Datei ist ein Enhanced Model (trainierte KI-Modelle), keine Trainings-Identitäten!")
+                            st.info("""
+                            **Unterschied:**
+                            - **Enhanced Model**: Enthält trainierte Modelle für bessere Metadaten-Integration
+                              → Laden Sie diese unter "Enhanced Model" in der Sidebar hoch
+                            - **Trainings-Identitäten**: Enthält Person-Embeddings für Gesichtserkennung
+                              → Laden Sie diese hier unter "Trainings-Identitäten" hoch
+                            
+                            **Richtige Dateien für Trainings-Identitäten:**
+                            - `embeddings.pkl` aus der Enroll-Seite
+                            - Konvertierte JSON/PKL-Dateien aus dem PBF-DAMS Export (mit Person-Namen und Embeddings)
+                            """)
+                            return None
+                    
+                    # Versuche als Trainings-Identitäten zu laden
+                    gallery = build_gallery_from_training_pickle(data)
+                    if gallery and len(gallery.people) > 0:
+                        return gallery
+                    else:
+                        st.warning("Die PKL-Datei konnte geladen werden, enthält aber keine Person-Embeddings.")
+                        st.info("Möglicherweise ist dies ein Enhanced Model. Laden Sie es stattdessen unter 'Enhanced Model' hoch.")
+                        return None
+                        
+                except Exception as joblib_error:
+                    # joblib hat fehlgeschlagen, versuche pickle
+                    bio.seek(0)
+                    try:
+                        data = pickle.loads(raw_bytes)
+                        gallery = build_gallery_from_training_pickle(data)
+                        if gallery and len(gallery.people) > 0:
+                            return gallery
+                        else:
+                            st.warning("Die PKL-Datei konnte geladen werden, enthält aber keine Person-Embeddings.")
+                            return None
+                    except (pickle.UnpicklingError, EOFError) as pickle_error:
+                        # Beide Methoden haben fehlgeschlagen
+                        st.error(f"Fehler beim Laden der PKL-Datei: Die Datei ist kein gültiges Pickle- oder Joblib-Format.")
+                        st.error(f"Joblib-Fehler: {joblib_error}")
+                        st.error(f"Pickle-Fehler: {pickle_error}")
+                        st.info("""
+                        **Mögliche Ursachen:**
+                        1. Die Datei ist beschädigt
+                        2. Die Datei ist ein Enhanced Model (laden Sie es unter 'Enhanced Model' hoch)
+                        3. Die Datei hat ein anderes Format
+                        
+                        **Erwartete Dateien für Trainings-Identitäten:**
+                        - `embeddings.pkl` aus der Enroll-Seite
+                        - Konvertierte JSON/PKL-Dateien mit Person-Namen und Embeddings
+                        """)
+                        return None
+                        
+            except Exception as e:
+                st.error(f"Unerwarteter Fehler beim Laden der PKL-Datei: {e}")
+                import traceback
+                st.code(traceback.format_exc())
+                return None
+        else:
+            st.warning(f"Unbekanntes Dateiformat: {file_ext}. Erwartet: .json oder .pkl")
+            return None
+    except Exception as exc:
+        st.error(f"Trainings-Identitäten konnten nicht geladen werden: {exc}")
+        st.info("Bitte prüfen Sie, ob die Datei das richtige Format hat (JSON oder PKL).")
+    finally:
+        uploaded_file.seek(0)
+    return None
+
 db = None
 if gallery_file is not None:
-    import pickle
     try:
         db = GalleryDB()
-        data = pickle.load(gallery_file)
-        if isinstance(data, dict):
-            db.people = data.get('people', {})
-            db.face_metadata = data.get('metadata', {})
+        
+        # Prüfe Dateityp durch Lesen der ersten Bytes
+        gallery_file.seek(0)
+        first_bytes = gallery_file.read(10)
+        gallery_file.seek(0)
+        
+        # Prüfe ob es ein Pickle-Format ist (Pickle beginnt typischerweise mit bestimmten Bytes)
+        is_pickle = False
+        if len(first_bytes) > 0:
+            # Pickle-Format erkennt man an bestimmten Start-Bytes
+            # Protocol 0-3: beginnt mit bestimmten Bytes, Protocol 4+: beginnt mit \x80
+            pickle_markers = [b'\x80', b'c', b'(', b'q', b'\x05']  # Häufige Pickle-Start-Bytes
+            if first_bytes[0:1] in [b'\x80'] or (len(first_bytes) > 1 and first_bytes[0:2] in [b'c\x00', b'(q']):
+                is_pickle = True
+            # Prüfe auch auf JSON (beginnt mit { oder [)
+            elif first_bytes[0:1] in [b'{', b'[']:
+                is_pickle = False
+            else:
+                # Versuche es als Pickle
+                is_pickle = True
+        
+        if is_pickle:
+            # Versuche zuerst mit joblib (für komprimierte/scikit-learn Dateien)
+            try:
+                gallery_file.seek(0)
+                data = joblib.load(gallery_file)
+                
+                # Prüfe ob es ein Enhanced Model ist
+                if isinstance(data, dict) and any(key in data for key in ['age_model', 'gender_model', 'quality_model']):
+                    st.error("❌ Diese Datei ist ein Enhanced Model (trainierte KI-Modelle), keine Embeddings!")
+                    st.info("""
+                    **Laden Sie Enhanced Models hier hoch:**
+                    → In der Sidebar unter "Enhanced Model" (nicht unter "Embeddings")
+                    
+                    **Für Embeddings verwenden Sie:**
+                    - `embeddings.pkl` aus der Enroll-Seite
+                    """)
+                    db = None
+                else:
+                    # Versuche als Embeddings zu verarbeiten
+                    if isinstance(data, dict):
+                        db.people = data.get('people', {})
+                        db.face_metadata = data.get('metadata', {})
+                    else:
+                        db.people = data
+                        
+            except Exception as joblib_error:
+                # joblib hat fehlgeschlagen, versuche pickle
+                gallery_file.seek(0)
+                try:
+                    data = pickle.load(gallery_file)
+                    
+                    # Prüfe ob es ein Enhanced Model ist
+                    if isinstance(data, dict) and any(key in data for key in ['age_model', 'gender_model', 'quality_model']):
+                        st.error("❌ Diese Datei ist ein Enhanced Model (trainierte KI-Modelle), keine Embeddings!")
+                        st.info("Laden Sie Enhanced Models in der Sidebar unter 'Enhanced Model' hoch (nicht unter 'Embeddings').")
+                        db = None
+                    else:
+                        # Versuche als Embeddings zu verarbeiten
+                        if isinstance(data, dict):
+                            db.people = data.get('people', {})
+                            db.face_metadata = data.get('metadata', {})
+                        else:
+                            db.people = data
+                            
+                except (pickle.UnpicklingError, EOFError, ValueError) as e:
+                    # Falls Pickle fehlschlägt, versuche als JSON
+                    gallery_file.seek(0)
+                    try:
+                        content = gallery_file.read().decode('utf-8')
+                        data = json.loads(content)
+                        is_pickle = False
+                        
+                        # Als Embeddings verarbeiten
+                        if isinstance(data, dict):
+                            db.people = data.get('people', {})
+                            db.face_metadata = data.get('metadata', {})
+                        else:
+                            db.people = data
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        raise ValueError(f"Datei ist weder ein gültiges Pickle- noch JSON-Format. Fehler: {e}")
         else:
-            db.people = data
-        st.success(f"Embeddings geladen: {len(db.people)} Personen.")
+            # Versuche als JSON zu laden
+            gallery_file.seek(0)
+            content = gallery_file.read().decode('utf-8')
+            data = json.loads(content)
+            
+            # Als Embeddings verarbeiten
+            if isinstance(data, dict):
+                db.people = data.get('people', {})
+                db.face_metadata = data.get('metadata', {})
+            else:
+                db.people = data
+        
+        # Prüfe ob Embeddings gefunden wurden
+        if db and len(db.people) > 0:
+            st.success(f"Embeddings geladen: {len(db.people)} Personen.")
+        elif db:
+            st.warning("Embeddings-Datei geladen, aber keine Personen gefunden.")
+            st.info("Möglicherweise ist dies ein Enhanced Model. Laden Sie es stattdessen unter 'Enhanced Model' hoch.")
+            
+    except json.JSONDecodeError as e:
+        st.error(f"Fehler beim Laden der Embeddings: Die Datei ist kein gültiges JSON-Format. {e}")
+    except (pickle.UnpicklingError, EOFError) as e:
+        st.error(f"Fehler beim Laden der Embeddings: Die Datei ist kein gültiges Pickle-Format. {e}")
+        st.info("Tipp: Stellen Sie sicher, dass Sie eine .pkl-Datei aus der Enroll-Seite hochladen.")
     except Exception as e:
         st.error(f"Fehler beim Laden der Embeddings: {e}")
+        st.info("Mögliche Ursachen: Datei ist beschädigt, falsches Format, oder Datei ist leer.")
+
+if training_identity_file is not None:
+    training_db = load_training_identity_file(training_identity_file)
+    if training_db:
+        if db is None:
+            db = training_db
+        else:
+            merge_gallery_databases(db, training_db)
+        total_identities = sum(len(v) for v in training_db.people.values())
+        st.success(f"Trainings-Identitäten geladen ({len(training_db.people)} Personen / {total_identities} Embeddings).")
+        st.info("Diese Personen wurden im Train-Modul gelernt und können jetzt automatisch erkannt werden.")
+    else:
+        st.warning("Die Trainings-Identitäten konnten nicht erkannt werden. Bitte laden Sie eine JSON- oder PKL-Datei aus dem Train-Workflow hoch.")
 
 # Enhanced Model verarbeiten
 enhanced_engine = None
@@ -145,24 +485,22 @@ def draw_boxes(img_bgr, persons):
     for p in persons:
         x1,y1,x2,y2 = map(int, p["bbox"])
         
-        # Farbe basierend auf Qualität
-        quality = p.get('quality_score', 0.5)
-        if quality > 0.7:
-            color = (0, 255, 0)  # Grün für hohe Qualität
-        elif quality > 0.4:
-            color = (0, 255, 255)  # Gelb für mittlere Qualität
-        else:
-            color = (0, 0, 255)  # Rot für niedrige Qualität
+        # Einheitliche Farbe für alle Bounding Boxes
+        color = (255, 255, 255)  # Weiß für alle Boxes
         
         cv2.rectangle(img, (x1,y1), (x2,y2), color, 2)
         
         # Label mit erweiterten Informationen
         label_parts = []
         
-        # Name und Ähnlichkeit
+        # Name und Ähnlichkeit (prominente Anzeige)
         if p.get("name"):
             sim = f" ({p['similarity']:.2f})" if p.get("similarity") is not None else ""
-            label_parts.append(p["name"] + sim)
+            # Name wird als erstes dargestellt
+            label_parts.append(f"{p['name']}{sim}")
+        else:
+            # Unbekannte Person
+            label_parts.append("Unbekannt")
         
         # Demografie
         if p.get("gender"):
@@ -392,11 +730,11 @@ def display_metadata_annotated(metadata):
     if metadata.get('camera_make') or metadata.get('camera_model'):
         camera_text = ""
         if metadata.get('camera_make'):
-            camera_text += f"**Hersteller:** :red[{metadata['camera_make']}]"
+            camera_text += f"**Hersteller:** {metadata['camera_make']}"
         if metadata.get('camera_model'):
             if camera_text:
                 camera_text += " | "
-            camera_text += f"**Modell:** :blue[{metadata['camera_model']}]"
+            camera_text += f"**Modell:** {metadata['camera_model']}"
         
         if camera_text:
             st.markdown(camera_text)
@@ -405,19 +743,19 @@ def display_metadata_annotated(metadata):
     if any(key in metadata for key in ['focal_length', 'f_number', 'iso', 'exposure_time']):
         settings_text = ""
         if metadata.get('focal_length'):
-            settings_text += f"**Brennweite:** :green[{metadata['focal_length']}mm]"
+            settings_text += f"**Brennweite:** {metadata['focal_length']}mm"
         if metadata.get('f_number'):
             if settings_text:
                 settings_text += " | "
-            settings_text += f"**Blende:** :orange[f/{metadata['f_number']}]"
+            settings_text += f"**Blende:** f/{metadata['f_number']}"
         if metadata.get('iso'):
             if settings_text:
                 settings_text += " | "
-            settings_text += f"**ISO:** :violet[{metadata['iso']}]"
+            settings_text += f"**ISO:** {metadata['iso']}"
         if metadata.get('exposure_time'):
             if settings_text:
                 settings_text += " | "
-            settings_text += f"**Belichtung:** :red[1/{metadata['exposure_time']}s]"
+            settings_text += f"**Belichtung:** 1/{metadata['exposure_time']}s"
         
         if settings_text:
             st.markdown(settings_text)
@@ -425,9 +763,9 @@ def display_metadata_annotated(metadata):
     # Standort
     if metadata.get('gps'):
         gps = metadata['gps']
-        location_text = f"**Standort:** :red[{gps['lat']:.4f}°N] :blue[{gps['lon']:.4f}°E]"
+        location_text = f"**Standort:** {gps['lat']:.4f}°N {gps['lon']:.4f}°E"
         if gps.get('altitude'):
-            location_text += f" | **Höhe:** :green[{gps['altitude']:.1f}m]"
+            location_text += f" | **Höhe:** {gps['altitude']:.1f}m"
         st.markdown(location_text)
 
 def interactive_annotation_editor(results: List[Dict]) -> List[Dict]:
@@ -549,7 +887,7 @@ def interactive_annotation_editor(results: List[Dict]) -> List[Dict]:
             if pd.notna(row['Notizen']) and row['Notizen']:
                 person['user_notes'] = row['Notizen']
     
-    st.success(f"✅ {len(edited_df)} Annotationen bearbeitet!")
+    st.success(f"{len(edited_df)} Annotationen bearbeitet!")
     return updated_results
 
 results: List[Dict[str, Any]] = []
@@ -559,6 +897,31 @@ if enhanced_engine is not None:
     st.success("Enhanced Model aktiv - Metadaten-Integration läuft!")
 elif use_enhanced_model:
     st.warning("Enhanced Model nicht geladen - verwende Standard-Engine")
+
+        # Status-Anzeige für Embeddings/Personenerkennung
+if db is not None and len(db.people) > 0:
+    total_embeddings = sum(len(embs) for embs in db.people.values())
+    st.success(f"Personenerkennung aktiv: {len(db.people)} Personen mit {total_embeddings} Embeddings geladen (Threshold: {threshold:.2f})")
+    
+    # Zeige geladene Personen
+    with st.expander(f"Geladene Personen anzeigen ({len(db.people)} Personen)", expanded=False):
+        for person_name, embeddings in db.people.items():
+            embedding_count = len(embeddings)
+            st.write(f"- **{person_name}**: {embedding_count} Embedding(s)")
+            # Zeige Embedding-Dimension für erste Person
+            if embeddings and len(embeddings) > 0:
+                emb_sample = embeddings[0]
+                if isinstance(emb_sample, np.ndarray):
+                    st.caption(f"  Dimension: {emb_sample.shape}")
+    
+    # Threshold-Warnung
+    if threshold > 0.7:
+        st.warning(f"⚠️ **WARNUNG:** Threshold ({threshold:.2f}) ist sehr hoch! Viele Erkennungen werden möglicherweise verworfen.")
+        st.info("💡 **Tipp:** Setzen Sie den Threshold auf **0.5-0.6** für bessere Erkennungsrate.")
+elif db is not None and len(db.people) == 0:
+    st.warning("Embeddings-Datei geladen, aber keine Personen gefunden. Personenerkennung deaktiviert.")
+else:
+    st.info("Keine Embeddings geladen. Gesichter werden erkannt, aber keine Personen zugeordnet. Laden Sie `embeddings.pkl` oder Trainings-Identitäten hoch.")
 
 if files:
     progress_bar = st.progress(0)
@@ -612,9 +975,62 @@ if files:
         persons = []
         for f in filtered_faces:
             name, sim = (None, None)
-            if db:
+            if db and len(db.people) > 0:
+                # Personenerkennung durchführen
                 n, s = db.match(f["embedding"], threshold=threshold)
                 name, sim = (n, s)
+                
+                # Debug-Info: Zeige auch wenn keine Person erkannt wurde (für erstes Gesicht)
+                if idx == 0 and len(persons) == 0 and name is None:
+                    if s is not None and s > 0:
+                        st.warning(f"⚠️ **Debug:** Beste Ähnlichkeit gefunden: {s:.3f} (Threshold: {threshold:.2f})")
+                        st.info(f"💡 **Tipp:** Threshold ist zu hoch! Setzen Sie ihn auf {s:.2f} oder niedriger, um diese Person zu erkennen.")
+                        
+                        # Zeige Top 3 ähnlichste Personen
+                        if db and hasattr(db, 'people'):
+                            similarities = []
+                            for person_name, embeddings_list in db.people.items():
+                                for emb in embeddings_list:
+                                    if hasattr(emb, 'shape') and emb.shape == f["embedding"].shape:
+                                        try:
+                                            sim = 1 - np.linalg.norm(f["embedding"] - emb)
+                                            similarities.append((person_name, sim))
+                                        except:
+                                            pass
+                            
+                            if similarities:
+                                similarities.sort(key=lambda x: x[1], reverse=True)
+                                st.info(f"**Top 3 ähnlichste Personen:** {', '.join([f'{name} ({sim:.3f})' for name, sim in similarities[:3]])}")
+                    elif s is not None and s == 0:
+                        st.warning("⚠️ **Debug:** Keine Ähnlichkeit gefunden (0.0). Embeddings scheinen nicht kompatibel zu sein.")
+                        st.info("💡 **Mögliche Ursachen:**")
+                        st.write("- Embeddings wurden mit einem anderen Face-Engine-Modell erstellt")
+                        st.write("- Embedding-Dimensionen stimmen nicht überein")
+                        st.write("- Gesicht wurde nicht korrekt extrahiert")
+                        
+                        # Zeige Embedding-Dimensionen
+                        if hasattr(f["embedding"], 'shape'):
+                            st.code(f"Erkanntes Gesicht Embedding Dimension: {f['embedding'].shape}")
+                        if db and len(db.people) > 0:
+                            first_person = list(db.people.keys())[0]
+                            first_embedding = db.people[first_person][0]
+                            if hasattr(first_embedding, 'shape'):
+                                st.code(f"Geladenes Embedding Dimension: {first_embedding.shape}")
+                    else:
+                        st.info("Keine Ähnlichkeit gefunden. Stellen Sie sicher, dass die Embeddings zur Person passen.")
+            elif db is None or len(db.people) == 0:
+                # Keine Embeddings geladen - nur für das erste Bild eine Warnung anzeigen
+                if idx == 0 and len(persons) == 0:
+                    st.warning("Keine Embeddings geladen! Personen werden nicht erkannt.")
+                    st.info("""
+                    **Um Personen zu erkennen:**
+                    1. Laden Sie `embeddings.pkl` aus der Enroll-Seite hoch (unter "Embeddings DB")
+                    2. Oder laden Sie Trainings-Identitäten hoch (unter "Trainings-Identitäten")
+                    
+                    **Ohne Embeddings:**
+                    - Gesichter werden erkannt, aber keine Personen zugeordnet
+                    - Sie können Personen manuell in der Annotation-Tabelle zuordnen
+                    """)
             persons.append({
                 "bbox": f["bbox"],
                 "prob": f["prob"],
@@ -662,6 +1078,20 @@ if files:
         # Anzeige
         st.header(f"{up.name}")
         
+        # Erkannte Personen-Übersicht
+        if persons:
+            recognized_persons = [p for p in persons if p.get('name')]
+            unknown_faces = [p for p in persons if not p.get('name')]
+            
+            if recognized_persons:
+                persons_list = [f"{p['name']} ({p['similarity']:.2f})" for p in recognized_persons]
+                st.success(f"**{len(recognized_persons)} Person(en) erkannt:** {', '.join(persons_list)}")
+            
+            if unknown_faces:
+                st.info(f"**{len(unknown_faces)} unbekannte Gesichter** erkannt (keine Übereinstimmung in der Datenbank)")
+        else:
+            st.warning("Keine Gesichter in diesem Bild erkannt")
+        
         # Bildanzeige
         col1, col2 = st.columns(2)
         with col1:
@@ -669,6 +1099,25 @@ if files:
         with col2:
             boxed = draw_boxes(img_bgr, persons)
             st.image(cv2.cvtColor(boxed, cv2.COLOR_BGR2RGB), caption="Erkannte Gesichter", use_container_width=True)
+            
+            # Namen der erkannten Personen unter dem Bild anzeigen
+            if persons:
+                recognized_names = [p['name'] for p in persons if p.get('name')]
+                unknown_count = len([p for p in persons if not p.get('name')])
+                
+                if recognized_names:
+                    st.success("**Erkannte Personen:**")
+                    for i, name in enumerate(recognized_names, 1):
+                        similarity = next((p['similarity'] for p in persons if p.get('name') == name), None)
+                        if similarity is not None:
+                            st.write(f"**{i}.** {name} *(Ähnlichkeit: {similarity:.2f})*")
+                        else:
+                            st.write(f"**{i}.** {name}")
+                
+                if unknown_count > 0:
+                    st.info(f"**{unknown_count} unbekannte Gesicht(er)** (keine Übereinstimmung gefunden)")
+            else:
+                st.warning("Keine Gesichter erkannt")
         
         # Metadaten anzeigen
         display_metadata_card(metadata, "Bild-Metadaten")
@@ -761,7 +1210,41 @@ if files:
                     percentage = count / total_faces * 100
                     st.write(f"• {range_name}: {count} ({percentage:.1f}%)")
     
+    # Zusammenfassung der erkannten Personen
+    st.subheader("Erkannte Personen")
+    
+    total_recognized = sum(len([p for p in r.get('persons', []) if p.get('name')]) for r in results)
+    
+    # Erkannte Personen sammeln
+    all_recognized_persons = {}
+    for result in results:
+        for person in result.get('persons', []):
+            if person.get('name'):
+                name = person['name']
+                if name not in all_recognized_persons:
+                    all_recognized_persons[name] = 0
+                all_recognized_persons[name] += 1
+    
+    if all_recognized_persons:
+        st.success(f"**{len(all_recognized_persons)} verschiedene Personen erkannt** (insgesamt {total_recognized} Erkennungen):")
+        
+        # Sortiere nach Häufigkeit
+        sorted_persons = sorted(all_recognized_persons.items(), key=lambda x: x[1], reverse=True)
+        
+        # Zeige in Spalten
+        cols = st.columns(min(3, len(sorted_persons)))
+        for i, (name, count) in enumerate(sorted_persons):
+            with cols[i % len(cols)]:
+                st.metric(name, f"{count}x erkannt")
+        
+        # Als Text-Liste
+        persons_text = ", ".join([f"{name} ({count}x)" for name, count in sorted_persons])
+        st.info(f"**Übersicht:** {persons_text}")
+    else:
+        st.warning("**Keine Personen erkannt.** Stellen Sie sicher, dass Sie `embeddings.pkl` hochgeladen haben.")
+    
     # Download-Button
+    st.subheader("Download Ergebnisse")
     col1, col2 = st.columns(2)
     with col1:
         st.download_button("Download results JSON",

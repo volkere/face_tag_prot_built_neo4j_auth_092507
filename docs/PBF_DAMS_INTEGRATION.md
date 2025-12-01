@@ -640,3 +640,6 @@ st.sidebar.metric("API Errors", st.session_state.api_errors)
 **Letzte Aktualisierung:** 4. November 2025  
 **Maintainer:** Volker Enkrodt
 
+
+
+

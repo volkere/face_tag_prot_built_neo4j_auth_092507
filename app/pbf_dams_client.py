@@ -37,7 +37,8 @@ class PBFDAMSClient:
         photo: Optional[str] = None,
         person: Optional[str] = None,
         include_unidentified: bool = False,
-        timeout: int = 30
+        timeout: int = 30,
+        max_results: Optional[int] = None
     ) -> Dict:
         """
         Holt Image-Region-Daten von PBF-DAMS.
@@ -47,6 +48,7 @@ class PBFDAMSClient:
             person: Optional - Filter nach Person-Identifier
             include_unidentified: Auch nicht-identifizierte/private Personen inkludieren
             timeout: Request-Timeout in Sekunden
+            max_results: Optional - Begrenzung der Anzahl zurückgegebener Regions
             
         Returns:
             Dictionary mit:
@@ -60,6 +62,9 @@ class PBFDAMSClient:
         params = {
             "format": "json"
         }
+        
+        if max_results:
+            params["limit"] = max_results
         
         if photo:
             params["photo"] = photo
@@ -78,8 +83,35 @@ class PBFDAMSClient:
                 timeout=timeout
             )
             response.raise_for_status()
-            data = response.json()
+            
+            # Prüfe ob Response leer ist
+            if not response.content:
+                raise ValueError("Server returned empty response")
+            
+            # Prüfe Content-Type
+            content_type = response.headers.get('content-type', '')
+            if 'application/json' not in content_type:
+                raise ValueError(f"Server returned non-JSON response. Content-Type: {content_type}. Response: {response.text[:200]}")
+            
+            try:
+                data = response.json()
+            except ValueError as e:
+                raise ValueError(f"Invalid JSON response from server. Response: {response.text[:200]}") from e
+            
             logger.info(f"Successfully fetched {data.get('count', 0)} regions")
+            
+            regions = data.get("regions", [])
+            total_available = data.get("count", len(regions))
+            
+            if max_results is not None:
+                if len(regions) > max_results:
+                    regions = regions[:max_results]
+                data["regions"] = regions
+                data["count"] = len(regions)
+                data["total_available"] = total_available
+            else:
+                data["count"] = total_available
+            
             return data
             
         except requests.exceptions.Timeout:
@@ -251,4 +283,7 @@ class RegionData:
     def to_dict(self) -> Dict:
         """Gibt die rohen Daten zurück"""
         return self.data
+
+
+
 

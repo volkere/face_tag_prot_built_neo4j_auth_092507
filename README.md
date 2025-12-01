@@ -1,14 +1,14 @@
 
 
 Erweiterte Foto-Metadaten-Analyse mit Gesichtserkennung, EXIF-Extraktion, KI-Training und intelligenten Analysen.  
-(Enthält eine CLI und eine Streamlit Multi-Page UI (Enroll + Annotate + Analyze + Train + Neo4j) mit sicherem Internet-Zugang).
+(Enthält eine CLI und eine Streamlit Multi-Page UI (Enroll + Annotate + Analyze + Train + Import) mit sicherem Internet-Zugang).
 
  Branch-Übersicht
 
 Dieses Repository enthält verschiedene Varianten der App als separate Branches:
 
  main - Vollständige Version
-- Alle Features: Streamlit UI + CLI + Neo4j + Authentifizierung
+- Alle Features: Streamlit UI + CLI + Authentifizierung
 - Plattformen: Windows, macOS, Linux
 - Zielgruppe: Benutzer, die alle Funktionen benötigen
 
@@ -133,11 +133,12 @@ Login-Daten:
 - Benutzer: Passwort `user123`
 
 UI-Seiten:
-- Enroll: Erstellen von Embeddings für Personen-Erkennung
+- Enroll: Erstellen von Embeddings für Personen-Erkennung (ZIP-Upload, manuell, oder aus konvertierten PBF-DAMS-Daten)
 - Annotate: Erweiterte Foto-Analyse mit Metadaten und Enhanced Models
 - Analyze: Statistiken, Charts und Gruppierungsanalyse
 - Train: KI-Training mit Metadaten-Integration und Trainingsdaten-Generator
-- Neo4j: Graph-Datenbank-Integration für erweiterte Analysen
+- PBF DAMS Export: Export und Konvertierung von Regions-Daten aus PBF-DAMS
+- RegionList Details: Extraktion von RegionList-Daten (XMP-Metadaten) aus Bildern
 
 Quickstart (CLI)
 ```bash
@@ -160,7 +161,12 @@ requirements.txt       runtime deps
 pyproject.toml         package metadata + console script
 docs/                  documentation
 .github/workflows/     CI (lint/build)
+exported/              Exportierte Rohdaten aus PBF-DAMS
+converted/             Konvertierte Trainings-Dateien (ersetzt trained/)
+trained_models/        Trainierte KI-Modelle (von Train-Seite)
 ```
+
+Hinweis: Alle zuvor im Ordner `trained/` abgelegten Konvertierungsergebnisse liegen jetzt unter `converted/`. Aktualisieren Sie lokale Skripte oder Automationen entsprechend.
 
 Install as a package (optional)
 ```bash

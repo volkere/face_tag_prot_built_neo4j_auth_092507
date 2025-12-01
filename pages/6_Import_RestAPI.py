@@ -1,8 +1,8 @@
 """
-PBF DAMS Import Page
+Import (RestAPI) Page
 
 Ermöglicht das Abrufen und Importieren von Image-Region-Daten
-(XMP-Metadaten) aus dem PBF-DAMS Django Backend.
+(XMP-Metadaten) aus dem PBF-DAMS Django Backend über REST API.
 """
 import streamlit as st
 import pandas as pd
@@ -19,7 +19,7 @@ from pbf_dams_client import PBFDAMSClient, RegionData
 from streamlit_styles import apply_custom_css
 
 st.set_page_config(
-    page_title="PBF DAMS Import",
+    page_title="Import (RestAPI)",
     page_icon="",
     layout="wide"
 )
@@ -27,9 +27,9 @@ st.set_page_config(
 # Wende kleinere Schriftgrößen an
 apply_custom_css()
 
-st.title("PBF DAMS Regions Import")
+st.title("Import (RestAPI)")
 st.markdown("""
-Importiere Image-Region-Daten (XMP-Metadaten) aus dem PBF-DAMS.
+Importiere Image-Region-Daten (XMP-Metadaten) aus dem PBF-DAMS über REST API.
 Diese Daten zeigen, wo welche Personen auf Fotos markiert sind.
 """)
 
@@ -173,11 +173,29 @@ if st.button("Daten abrufen", type="primary", use_container_width=True):
             st.success(f"{data['count']} Regions erfolgreich abgerufen!")
             
         except requests.exceptions.ConnectionError:
-            st.error("Kann nicht mit PBF-DAMS Server verbinden. Läuft der Server?")
+            st.error("❌ **Verbindungsfehler**: Kann nicht mit PBF-DAMS Server verbinden.")
+            st.info("**Mögliche Ursachen:**")
+            st.write("- Server läuft nicht (Django-Server starten)")
+            st.write("- Falsche Server-URL in der Konfiguration")
+            st.write("- Netzwerkprobleme")
         except requests.exceptions.Timeout:
-            st.error("Request-Timeout. Server antwortet nicht.")
+            st.error("❌ **Timeout**: Server antwortet nicht rechtzeitig.")
+            st.info("Server ist möglicherweise überlastet oder nicht erreichbar.")
+        except requests.exceptions.HTTPError as e:
+            st.error(f"❌ **HTTP-Fehler**: {e}")
+            if e.response.status_code == 404:
+                st.info("API-Endpoint nicht gefunden. Prüfe die Server-URL und API-Pfade.")
+            elif e.response.status_code == 500:
+                st.info("Server-Fehler. Prüfe die Django-Server-Logs.")
+        except ValueError as e:
+            st.error(f"❌ **Datenformat-Fehler**: {e}")
+            st.info("**Mögliche Ursachen:**")
+            st.write("- Server gibt kein JSON zurück")
+            st.write("- API-Endpoint gibt leere Antwort zurück")
+            st.write("- Server ist nicht korrekt konfiguriert")
         except Exception as e:
-            st.error(f"Fehler beim Abrufen der Daten: {e}")
+            st.error(f"❌ **Unbekannter Fehler**: {e}")
+            st.info("Prüfe die Server-Logs für weitere Details.")
 
 # Ergebnisse anzeigen
 if "export_data" in st.session_state:

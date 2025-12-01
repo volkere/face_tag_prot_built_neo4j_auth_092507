@@ -28,8 +28,6 @@ from PIL import Image
 import warnings
 from sklearn.model_selection import cross_val_score, GridSearchCV
 from sklearn.metrics import classification_report, confusion_matrix
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 # Versuche enhanced_face_engine zu importieren
 try:
@@ -93,20 +91,32 @@ def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]
             stats['lenses'][lens] = stats['lenses'].get(lens, 0) + 1
         
         # ISO
-        if 'iso' in metadata:
-            stats['iso_values'].append(metadata['iso'])
+        if 'iso' in metadata and metadata['iso'] is not None:
+            try:
+                stats['iso_values'].append(float(metadata['iso']))
+            except (ValueError, TypeError):
+                pass
         
         # Blende
-        if 'aperture' in metadata:
-            stats['aperture_values'].append(metadata['aperture'])
+        if 'aperture' in metadata and metadata['aperture'] is not None:
+            try:
+                stats['aperture_values'].append(float(metadata['aperture']))
+            except (ValueError, TypeError):
+                pass
         
         # Verschlusszeit
-        if 'shutter_speed' in metadata:
-            stats['shutter_speeds'].append(metadata['shutter_speed'])
+        if 'shutter_speed' in metadata and metadata['shutter_speed'] is not None:
+            try:
+                stats['shutter_speeds'].append(float(metadata['shutter_speed']))
+            except (ValueError, TypeError):
+                pass
         
         # Brennweite
-        if 'focal_length' in metadata:
-            stats['focal_lengths'].append(metadata['focal_length'])
+        if 'focal_length' in metadata and metadata['focal_length'] is not None:
+            try:
+                stats['focal_lengths'].append(float(metadata['focal_length']))
+            except (ValueError, TypeError):
+                pass
         
         # Standort
         if 'location' in metadata:
@@ -131,13 +141,20 @@ def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]
         if 'iso' in metadata and 'f_number' in metadata:
             iso = metadata['iso']
             f_number = metadata['f_number']
-            if iso < 400 and f_number < 2.8:
-                lighting = 'bright'
-            elif iso < 1600 and f_number < 4.0:
-                lighting = 'normal'
-            else:
-                lighting = 'low_light'
-            stats['lighting_conditions'][lighting] = stats['lighting_conditions'].get(lighting, 0) + 1
+            # Prüfe, ob Werte nicht None sind und numerisch
+            if iso is not None and f_number is not None:
+                try:
+                    iso = float(iso)
+                    f_number = float(f_number)
+                    if iso < 400 and f_number < 2.8:
+                        lighting = 'bright'
+                    elif iso < 1600 and f_number < 4.0:
+                        lighting = 'normal'
+                    else:
+                        lighting = 'low_light'
+                    stats['lighting_conditions'][lighting] = stats['lighting_conditions'].get(lighting, 0) + 1
+                except (ValueError, TypeError):
+                    pass
         
         # Bildgröße
         if 'image' in item:
@@ -165,29 +182,45 @@ def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]
             # Alter (in Gruppen)
             if 'age' in person:
                 age = person['age']
-                if age < 18:
-                    group = '0-17'
-                elif age < 30:
-                    group = '18-29'
-                elif age < 50:
-                    group = '30-49'
-                elif age < 70:
-                    group = '50-69'
-                else:
-                    group = '70+'
-                stats['age_groups'][group] = stats['age_groups'].get(group, 0) + 1
+                # Prüfe, ob Alter nicht None ist und numerisch
+                if age is not None:
+                    try:
+                        age = float(age)
+                        if age < 18:
+                            group = '0-17'
+                        elif age < 30:
+                            group = '18-29'
+                        elif age < 50:
+                            group = '30-49'
+                        elif age < 70:
+                            group = '50-69'
+                        else:
+                            group = '70+'
+                        stats['age_groups'][group] = stats['age_groups'].get(group, 0) + 1
+                    except (ValueError, TypeError):
+                        pass
             
             # Qualität
-            if 'quality_score' in person:
-                stats['quality_scores'].append(person['quality_score'])
+            if 'quality_score' in person and person['quality_score'] is not None:
+                try:
+                    stats['quality_scores'].append(float(person['quality_score']))
+                except (ValueError, TypeError):
+                    pass
             
             # Gesichtswinkel (falls verfügbar)
             if 'pose' in person and isinstance(person['pose'], dict):
-                yaw = person['pose'].get('yaw', 0)
-                pitch = person['pose'].get('pitch', 0)
-                roll = person['pose'].get('roll', 0)
-                angle_magnitude = np.sqrt(yaw**2 + pitch**2 + roll**2)
-                stats['face_angles'].append(angle_magnitude)
+                try:
+                    yaw = person['pose'].get('yaw') or 0
+                    pitch = person['pose'].get('pitch') or 0
+                    roll = person['pose'].get('roll') or 0
+                    # Prüfe, ob Werte numerisch sind
+                    yaw = float(yaw) if yaw is not None else 0
+                    pitch = float(pitch) if pitch is not None else 0
+                    roll = float(roll) if roll is not None else 0
+                    angle_magnitude = np.sqrt(yaw**2 + pitch**2 + roll**2)
+                    stats['face_angles'].append(angle_magnitude)
+                except (ValueError, TypeError):
+                    pass
     
     # Bias-Indikatoren berechnen
     if stats['genders']:
@@ -203,6 +236,55 @@ def analyze_training_data(training_data: List[Dict[str, Any]]) -> Dict[str, Any]
         }
     
     return stats
+
+def convert_pbf_dams_format_to_training_format(data):
+    """
+    Konvertiert PBF-DAMS Format zu Training Format
+    
+    Args:
+        data: PBF-DAMS Daten (Format: {'image': '...', 'regions': [...]})
+        
+    Returns:
+        dict: Training Format ({'image': '...', 'metadata': {...}, 'persons': [...]})
+    """
+    if isinstance(data, list):
+        return [convert_pbf_dams_format_to_training_format(item) for item in data]
+    
+    if not isinstance(data, dict):
+        return data
+    
+    # Prüfe ob es PBF-DAMS Format ist
+    if 'regions' in data and 'image' in data:
+        # Konvertiere zu Training Format
+        converted = {
+            'image': data['image'],
+            'metadata': data.get('metadata', {}),  # Leere Metadaten falls nicht vorhanden
+            'persons': []
+        }
+        
+        # Konvertiere regions zu persons
+        for region in data.get('regions', []):
+            if region.get('type') == 'Face' and region.get('name'):
+                person = {
+                    'name': region['name'],
+                    'bbox': [
+                        region.get('x_abs', 0),
+                        region.get('y_abs', 0),
+                        region.get('x_abs', 0) + region.get('width_px', 0),
+                        region.get('y_abs', 0) + region.get('height_px', 0)
+                    ],
+                    'embedding': region.get('embedding', []),
+                    'age': region.get('age'),
+                    'gender': region.get('gender'),
+                    'quality_score': region.get('quality_score'),
+                    'emotion': region.get('emotion'),
+                    'pose': region.get('pose', {}),
+                }
+                converted['persons'].append(person)
+        
+        return converted
+    
+    return data
 
 def validate_training_data_format(data):
     """
@@ -223,7 +305,11 @@ def validate_training_data_format(data):
     if not isinstance(data, dict):
         return False
     
-    # Erforderliche Felder prüfen
+    # Prüfe ob es PBF-DAMS Format ist (dann ist es auch gültig)
+    if 'regions' in data and 'image' in data:
+        return True
+    
+    # Erforderliche Felder für Training Format prüfen
     required_fields = ['image', 'metadata', 'persons']
     for field in required_fields:
         if field not in data:
@@ -231,10 +317,6 @@ def validate_training_data_format(data):
     
     # Personen-Liste prüfen
     if not isinstance(data['persons'], list):
-        return False
-    
-    # Mindestens eine Person sollte vorhanden sein
-    if len(data['persons']) == 0:
         return False
     
     return True
@@ -350,8 +432,8 @@ def display_advanced_training_results(results: Dict[str, Any], training_data: Li
                 gender_acc = [h.get('gender_accuracy', 0) for h in history]
                 
                 fig = go.Figure()
-                fig.add_trace(go.Scatter(x=epochs, y=age_acc, name='Alter', line=dict(color='blue')))
-                fig.add_trace(go.Scatter(x=epochs, y=gender_acc, name='Geschlecht', line=dict(color='red')))
+                fig.add_trace(go.Scatter(x=epochs, y=age_acc, name='Alter', line=dict(color='gray')))
+                fig.add_trace(go.Scatter(x=epochs, y=gender_acc, name='Geschlecht', line=dict(color='black')))
                 fig.update_layout(title="Training-Verlauf", xaxis_title="Epoche", yaxis_title="Genauigkeit")
                 st.plotly_chart(fig, use_container_width=True)
     
@@ -397,9 +479,7 @@ def display_advanced_training_results(results: Dict[str, Any], training_data: Li
         if 'improvement' in results:
             st.write("**Verbesserungen:**")
             for metric, improvement in results['improvement'].items():
-                color = "green" if improvement > 0 else "red"
-                st.markdown(f"- {metric}: <span style='color: {color}'>{improvement:+.3f}</span>", 
-                           unsafe_allow_html=True)
+                st.write(f"- {metric}: {improvement:+.3f}")
     
     # Modell-Integration
     st.subheader("Modell-Integration")
@@ -517,7 +597,14 @@ with main_tab1:
     # Modell-Pfad
     st.subheader("Modell-Speicherung")
     model_name = st.text_input("Modell-Name", value=f"enhanced_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-    model_path = f"models/{model_name}.pkl"
+    
+    # Erstelle trained_models Verzeichnis falls es nicht existiert
+    BASE_DIR = os.path.dirname(__file__)
+    TRAINED_MODELS_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "trained_models"))
+    os.makedirs(TRAINED_MODELS_DIR, exist_ok=True)
+    
+    model_path = os.path.join(TRAINED_MODELS_DIR, f"{model_name}.pkl")
+    st.info(f"Modell wird gespeichert in: **{TRAINED_MODELS_DIR}**")
 
 # Hauptbereich
 if not training_files and not sample_photos:
@@ -620,6 +707,9 @@ else:
                 if not validate_training_data_format(data):
                     st.warning(f"Ungültiges Format in {file.name}. Überspringe Datei.")
                     continue
+                
+                # Konvertiere PBF-DAMS Format zu Training Format falls nötig
+                data = convert_pbf_dams_format_to_training_format(data)
                 
                 if isinstance(data, list):
                     training_data.extend(data)
@@ -887,8 +977,11 @@ with main_tab4:
         quality_scores = []
         for item in training_data:
             for person in item.get('persons', []):
-                if 'quality_score' in person:
-                    quality_scores.append(person['quality_score'])
+                if 'quality_score' in person and person['quality_score'] is not None:
+                    try:
+                        quality_scores.append(float(person['quality_score']))
+                    except (ValueError, TypeError):
+                        pass
         
         if quality_scores:
             avg_quality = np.mean(quality_scores)
